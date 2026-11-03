@@ -18,6 +18,7 @@ const state = {
     manual_production_facts: {},
     manual_montaj_facts: {},
     manual_oyna_facts: {},
+    manual_days_worked: {},
     total_plans: {
         op: 2000000000,
         men: 2400000000,
@@ -287,6 +288,51 @@ function sortEmployeesByRole(list) {
         }
         return (a.name || '').localeCompare(b.name || '');
     });
+}
+
+// Davr ish kunlarini hisoblash (barcha yakshanba kunlari chiqarib tashlanadi)
+function calculateWorkingDays(startDateStr, endDateStr) {
+    if (!startDateStr || !endDateStr) return 26;
+    const start = new Date(startDateStr + 'T00:00:00');
+    const end = new Date(endDateStr + 'T00:00:00');
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return 26;
+
+    let workDays = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+        if (cur.getDay() !== 0) { // 0 = Yakshanba (Sunday)
+            workDays++;
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+    return workDays > 0 ? workDays : 1;
+}
+
+function getPeriodWorkingDays() {
+    if (state.period && state.period.working_days) {
+        return state.period.working_days;
+    }
+    const d1 = document.getElementById('d1') ? document.getElementById('d1').value : '';
+    const d2 = document.getElementById('d2') ? document.getElementById('d2').value : '';
+    return calculateWorkingDays(d1, d2);
+}
+
+function getEmployeeDaysWorked(e) {
+    const davrKuni = getPeriodWorkingDays();
+    if (e.days_worked !== undefined && e.days_worked !== null && !isNaN(e.days_worked) && e.days_worked !== '') {
+        return Math.max(0, parseFloat(e.days_worked));
+    }
+    return davrKuni;
+}
+
+function getEmployeeActualOklad(e) {
+    const oklad = Number(e.oklad) || 0;
+    if (oklad <= 0) return 0;
+    const davrKuni = getPeriodWorkingDays();
+    if (davrKuni <= 0) return oklad;
+    const days = getEmployeeDaysWorked(e);
+    // Formula: oylik / davr kuni * ishlagan kuni
+    return Math.round((oklad / davrKuni) * days);
 }
 
 const PD_UNITS = {
@@ -1355,7 +1401,15 @@ async function loadPeriodData() {
                 });
             }
 
-            if (state.manual_production_facts || state.manual_montaj_facts || state.manual_oyna_facts) {
+            if (state.manual_days_worked) {
+                state.items.forEach(it => {
+                    if (state.manual_days_worked[String(it.id)] !== undefined) {
+                        it.days_worked = state.manual_days_worked[String(it.id)];
+                    }
+                });
+            }
+
+            if (state.manual_production_facts || state.manual_montaj_facts || state.manual_oyna_facts || state.manual_days_worked) {
                 state.items.forEach(it => {
                     const p = state.production_summary?.find(x => String(x.id) === String(it.id));
                     const m = state.montaj_summary?.find(x => String(x.id) === String(it.id));
@@ -1364,7 +1418,8 @@ async function loadPeriodData() {
                     if (m) it.kpi_montaj = m.bonus;
                     if (o && o.is_selected) it.kpi_oyna = o.bonus;
                     it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
-                    it.total_salary = it.oklad + it.kpi_bonus;
+                    const actualOklad = getEmployeeActualOklad(it);
+                    it.total_salary = actualOklad + it.kpi_bonus;
                     it.rest_to_pay = it.total_salary - it.advance;
                 });
             }
@@ -2169,6 +2224,7 @@ function renderCalcRows() {
     const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
     const roleFilter = state.calcRoleFilter || 'all';
     const search = (state.calcSearchTerm || '').toLowerCase().trim();
+    const davrKuni = getPeriodWorkingDays();
 
     const filtered = activeItems.filter(e => {
         const cat = getEmployeeRoleCategory(e);
@@ -2181,15 +2237,17 @@ function renderCalcRows() {
     });
 
     if (!filtered.length) {
-        return `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--tx-muted);" class="note">Tanlangan filter yoki qidiruv bo'yicha xodimlar topilmadi.</td></tr>`;
+        return `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--tx-muted);" class="note">Tanlangan filter yoki qidiruv bo'yicha xodimlar topilmadi.</td></tr>`;
     }
 
     let lastCatId = null;
     return filtered.map((e) => {
         const cat = getEmployeeRoleCategory(e);
+        const daysWorked = getEmployeeDaysWorked(e);
+        const actualOklad = getEmployeeActualOklad(e);
         const auto = getAutoKpi(e);
         const k = computeKpi(e);
-        const tot = e.oklad + k.bonus;
+        const tot = actualOklad + k.bonus;
         const rest = tot - e.advance;
 
         const isUnselected = (e.group === 'op' && !isOpSelected(e)) || (e.group === 'men' && !isMenSelected(e));
@@ -2218,12 +2276,36 @@ function renderCalcRows() {
             const catCount = activeItems.filter(x => getEmployeeRoleCategory(x).id === cat.id).length;
             sectionHeader = `
                 <tr style="background:var(--bg); border-top:2px solid var(--bd);">
-                    <td colspan="9" style="padding:7px 12px; font-weight:700; font-size:12px; color:${cat.color}; letter-spacing:0.3px;">
+                    <td colspan="10" style="padding:7px 12px; font-weight:700; font-size:12px; color:${cat.color}; letter-spacing:0.3px;">
                         ${cat.icon} ${cat.groupName.toUpperCase()} &nbsp;·&nbsp; <span style="font-weight:500; font-size:11px; opacity:0.85;">${catCount} nafar xodim</span>
                     </td>
                 </tr>
             `;
         }
+
+        const isDaysModified = daysWorked !== davrKuni;
+        const okladDisplay = (e.oklad <= 0) 
+            ? '<b>0</b>' 
+            : (isDaysModified 
+                ? `<b style="color:var(--pr);">${f(actualOklad)}</b><div class="note" style="font-size:10px; line-height:1.2; margin-top:2px;">stavka: ${f(e.oklad)}</div>`
+                : `<b>${f(actualOklad)}</b>`);
+
+        const daysInputHtml = `
+            <div style="display:flex; align-items:center; gap:4px;">
+                <input type="number" 
+                       id="emp-days-${e.id}" 
+                       class="styled-input" 
+                       min="0" 
+                       max="${davrKuni}" 
+                       step="0.5"
+                       style="width:58px; text-align:center; font-weight:700; padding:4px 6px; ${isDaysModified ? 'color:var(--pr); border-color:var(--pr);' : ''}" 
+                       value="${daysWorked}"
+                       onfocus="this.select()"
+                       oninput="onDaysWorkedChange('${e.id}', this.value)"
+                       title="Ishlagan kunlar soni. Davr ish kunlari: ${davrKuni} kun (yakshanbalarsiz)">
+                <span class="note" style="font-size:11px; white-space:nowrap; opacity:0.8;">/ ${davrKuni}</span>
+            </div>
+        `;
 
         const rowHtml = `
             <tr>
@@ -2233,7 +2315,8 @@ function renderCalcRows() {
                         ${cat.icon} ${cat.cleanPosition}
                     </span>
                 </td>
-                <td><b>${f(e.oklad)}</b></td>
+                <td id="emp-oklad-${e.id}">${okladDisplay}</td>
+                <td>${daysInputHtml}</td>
                 <td>${e.group === 'bosh' || e.group === 'ish' || isUnselected ? '—' : f(e.plan)}</td>
                 <td>${factDisplay}</td>
                 <td class="${colorClass}">${percentDisplay}</td>
@@ -2273,13 +2356,15 @@ function onCalcSearch(val) {
 
 function renderCalc() {
     const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
+    const davrKuni = getPeriodWorkingDays();
 
     let s = { ok: 0, b: 0, av: 0, t: 0, r: 0 };
     activeItems.forEach((e) => {
         const k = computeKpi(e);
-        const tot = e.oklad + k.bonus;
+        const actualOklad = getEmployeeActualOklad(e);
+        const tot = actualOklad + k.bonus;
         const rest = tot - e.advance;
-        s.ok += e.oklad;
+        s.ok += actualOklad;
         s.b += k.bonus;
         s.av += e.advance;
         s.t += tot;
@@ -2296,7 +2381,7 @@ function renderCalc() {
 
         <!-- KPI Natijalari -->
         <div class="kpis">
-            <div class="k accent-pr"><small>Oklad jami</small><b>${f(s.ok)}</b></div>
+            <div class="k accent-pr"><small>Oklad jami</small><b id="calc-card-oklad">${f(s.ok)}</b></div>
             <div class="k accent-ok"><small>KPI bonus</small><b id="calc-card-bonus">${f(s.b)}</b></div>
             <div class="k accent-wa"><small>Avanslar (${$('#d1').value} – ${$('#d2').value})</small><b>${f(s.av)}</b></div>
             <div class="k accent-pr"><small>Jami oylik</small><b id="calc-card-total">${f(s.t)}</b></div>
@@ -2308,9 +2393,10 @@ function renderCalc() {
             <!-- Lavozim va bo'limlar bo'yicha filter paneli -->
             <div style="margin-bottom:14px; display:flex; flex-direction:column; gap:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                         <span style="font-weight:700; font-size:14px; color:var(--tx-main);">Lavozim va bo'limlar bo'yicha tartib va filter:</span>
                         <span class="chip" style="font-size:11px; font-weight:600;">Jami ${activeItems.length} xodim</span>
+                        <span class="chip" style="font-size:11px; font-weight:600; background:rgba(37,99,235,0.08); color:var(--pr);">🗓️ Davr ish kunlari: <b>${davrKuni} kun</b> (yakshanbasiz)</span>
                     </div>
                     <div>
                         <input type="text" 
@@ -2352,6 +2438,7 @@ function renderCalc() {
                         <tr>
                             <th>Xodim (Lavozim bo'yicha)</th>
                             <th>Oklad</th>
+                            <th>Ishlagan kuni (${davrKuni} kun)</th>
                             <th>Plan</th>
                             <th>Jonli Fakt (MoySklad)</th>
                             <th>Bajarilish</th>
@@ -2365,7 +2452,8 @@ function renderCalc() {
                     <tfoot>
                         <tr>
                             <td>Jami</td>
-                            <td>${f(s.ok)}</td>
+                            <td id="calc-foot-oklad">${f(s.ok)}</td>
+                            <td style="text-align:center; font-size:11px;" class="note">${davrKuni} kunlik</td>
                             <td></td>
                             <td></td>
                             <td></td>
@@ -2378,8 +2466,8 @@ function renderCalc() {
                 </table>
             </div>
 
-            <div class="note" style="margin-top:12px;">
-                💡 <b>KPI bonus maydoni</b>: Tizim avtomatik hisoblagan bonusni chiqaradi. Uni xohlagancha o'zgartirishingiz yoki qo'shimcha KPI kiritishingiz mumkin. Barcha o'zgarishlar jami oylik va qoldiqqa real-time ta'sir qiladi.
+            <div class="note" style="margin-top:12px; line-height:1.5;">
+                💡 <b>Ishlagan kuni va Oklad hisobi</b>: Tanlangan davrdagi barcha yakshanba kunlari avtomatik chiqarib tashlanadi (davr ish kunlari: <b>${davrKuni} kun</b>). Agar xodim oy davomida to'liq ishlamagan bo'lsa, ishlagan kunini kiritsangiz, oylik <code>(Oklad / ${davrKuni} * ishlagan kuni)</code> formulasi asosida real-time hisoblanadi.
             </div>
 
             <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -2451,6 +2539,52 @@ function computeKpi(e) {
     return auto;
 }
 
+// Tepaning umumiy ko'rsatkichlari va jadval footerini yangilash
+function updateCalcSummaryTotals() {
+    const activeItems = state.items.filter(i => i.is_active);
+    let s = { ok: 0, b: 0, av: 0, t: 0, r: 0 };
+    activeItems.forEach(e => {
+        const k = computeKpi(e);
+        const actualOklad = getEmployeeActualOklad(e);
+        const t = actualOklad + k.bonus;
+        const r = t - e.advance;
+        s.ok += actualOklad;
+        s.b += k.bonus;
+        s.av += e.advance;
+        s.t += t;
+        s.r += r;
+    });
+
+    const cardOk = document.getElementById('calc-card-oklad');
+    if (cardOk) cardOk.textContent = f(s.ok);
+
+    const cardB = document.getElementById('calc-card-bonus');
+    if (cardB) cardB.textContent = f(s.b);
+
+    const cardT = document.getElementById('calc-card-total');
+    if (cardT) cardT.textContent = f(s.t);
+
+    const cardR = document.getElementById('calc-card-rest');
+    if (cardR) cardR.textContent = f(s.r);
+
+    const cardWrap = document.getElementById('calc-card-rest-wrap');
+    if (cardWrap) {
+        cardWrap.className = `k ${s.r < 0 ? 'accent-er' : 'accent-ok'}`;
+    }
+
+    const footOk = document.getElementById('calc-foot-oklad');
+    if (footOk) footOk.textContent = f(s.ok);
+
+    const footB = document.getElementById('calc-foot-bonus');
+    if (footB) footB.textContent = f(s.b);
+
+    const footT = document.getElementById('calc-foot-total');
+    if (footT) footT.textContent = f(s.t);
+
+    const footR = document.getElementById('calc-foot-rest');
+    if (footR) footR.textContent = f(s.r);
+}
+
 // KPI bonusini joyida kiritish va real-time hisoblash
 function onKpiBonusChange(empId, val) {
     const num = typeof val === 'number' ? val : (parseFloat(val) || 0);
@@ -2459,7 +2593,8 @@ function onKpiBonusChange(empId, val) {
 
     item.custom_kpi = num;
     item.kpi_bonus = num;
-    const tot = item.oklad + num;
+    const actualOklad = getEmployeeActualOklad(item);
+    const tot = actualOklad + num;
     const rest = tot - item.advance;
     item.total_salary = tot;
     item.rest_to_pay = rest;
@@ -2478,61 +2613,80 @@ function onKpiBonusChange(empId, val) {
         inp.style.color = num > 0 ? 'var(--ok)' : 'var(--tx-muted)';
     }
 
-    // Tepaning umumiy ko'rsatkichlari va jadval footerini yangilash
-    const activeItems = state.items.filter(i => i.is_active);
-    let s = { ok: 0, b: 0, av: 0, t: 0, r: 0 };
-    activeItems.forEach(e => {
-        const k = computeKpi(e);
-        const t = e.oklad + k.bonus;
-        const r = t - e.advance;
-        s.ok += e.oklad;
-        s.b += k.bonus;
-        s.av += e.advance;
-        s.t += t;
-        s.r += r;
-    });
+    updateCalcSummaryTotals();
+}
 
-    const cardB = document.getElementById('calc-card-bonus');
-    if (cardB) cardB.textContent = f(s.b);
+// Ishlagan kunlar sonini kiritish va real-time hisoblash
+function onDaysWorkedChange(empId, val) {
+    const item = state.items.find(i => String(i.id) === String(empId) || String(i.emp_id) === String(empId));
+    if (!item) return;
 
-    const cardT = document.getElementById('calc-card-total');
-    if (cardT) cardT.textContent = f(s.t);
+    const davrKuni = getPeriodWorkingDays();
+    let num = parseFloat(val);
+    if (isNaN(num) || val === '') {
+        num = davrKuni;
+    }
+    item.days_worked = Math.max(0, num);
+    if (!state.manual_days_worked) state.manual_days_worked = {};
+    state.manual_days_worked[String(empId)] = item.days_worked;
 
-    const cardR = document.getElementById('calc-card-rest');
-    if (cardR) cardR.textContent = f(s.r);
+    const actualOklad = getEmployeeActualOklad(item);
+    const k = computeKpi(item);
+    const tot = actualOklad + k.bonus;
+    const rest = tot - item.advance;
+    item.total_salary = tot;
+    item.rest_to_pay = rest;
 
-    const cardWrap = document.getElementById('calc-card-rest-wrap');
-    if (cardWrap) {
-        cardWrap.className = `k ${s.r < 0 ? 'accent-er' : 'accent-ok'}`;
+    // Satrdagi okladni yangilash
+    const okladEl = document.getElementById(`emp-oklad-${empId}`);
+    if (okladEl) {
+        if (item.oklad <= 0) {
+            okladEl.innerHTML = `<b>0</b>`;
+        } else if (item.days_worked !== davrKuni) {
+            okladEl.innerHTML = `<b style="color:var(--pr);">${f(actualOklad)}</b><div class="note" style="font-size:10px; line-height:1.2; margin-top:2px;">stavka: ${f(item.oklad)}</div>`;
+        } else {
+            okladEl.innerHTML = `<b>${f(actualOklad)}</b>`;
+        }
     }
 
-    const footB = document.getElementById('calc-foot-bonus');
-    if (footB) footB.textContent = f(s.b);
+    const inp = document.getElementById(`emp-days-${empId}`);
+    if (inp) {
+        inp.style.color = item.days_worked < davrKuni ? 'var(--pr)' : '';
+        inp.style.borderColor = item.days_worked < davrKuni ? 'var(--pr)' : '';
+    }
 
-    const footT = document.getElementById('calc-foot-total');
-    if (footT) footT.textContent = f(s.t);
+    const totEl = document.getElementById(`emp-tot-${empId}`);
+    if (totEl) totEl.innerHTML = `<b>${f(tot)}</b>`;
 
-    const footR = document.getElementById('calc-foot-rest');
-    if (footR) footR.textContent = f(s.r);
+    const restEl = document.getElementById(`emp-rest-${empId}`);
+    if (restEl) {
+        restEl.innerHTML = `<b class="${rest < 0 ? 'r' : 'g'}">${f(rest)}</b>`;
+    }
+
+    updateCalcSummaryTotals();
 }
 
 // 3-TAB: Yakunlash va MoySklad
 function renderFin() {
     const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
     const end = $('#d2').value;
+    const davrKuni = getPeriodWorkingDays();
 
     let totalSalary = 0;
     let nonZeroCount = 0;
     const empRows = activeItems.map(e => {
         const cat = getEmployeeRoleCategory(e);
         const k = computeKpi(e);
-        const tot = Math.round(e.oklad + k.bonus);
+        const actualOklad = getEmployeeActualOklad(e);
+        const tot = Math.round(actualOklad + k.bonus);
+        const daysWorked = getEmployeeDaysWorked(e);
         totalSalary += tot;
         if (tot > 0) nonZeroCount++;
         return `
             <tr>
                 <td><b>${e.name}</b></td>
                 <td><span style="color:${cat.color}; font-weight:600;">${cat.icon} ${cat.cleanPosition}</span></td>
+                <td><b>${daysWorked}</b> / ${davrKuni} kun</td>
                 <td><b>${f(tot)}</b></td>
                 <td class="l">${end} 23:45</td>
             </tr>
@@ -2564,7 +2718,8 @@ function renderFin() {
                     <thead>
                         <tr>
                             <th>Xodim</th>
-                            <th>Bo'lim / Guruh</th>
+                            <th>Lavozim</th>
+                            <th>Ishlagan kuni</th>
                             <th>Hisoblangan jami oylik</th>
                             <th class="l">Sana</th>
                         </tr>
@@ -2589,20 +2744,26 @@ async function closeMonthAndSendToMoySklad() {
     const end = $('#d2')?.value || '2026-10-31';
     const start = $('#d1')?.value || '2026-10-01';
     const mon = $('#mon')?.value || '2026-10';
+    const davrKuni = getPeriodWorkingDays();
 
     const activeItems = state.items.filter(i => i.is_active);
     let totalSalary = 0;
     const empPayload = [];
     for (const e of activeItems) {
         const k = computeKpi(e);
-        const tot = Math.round(e.oklad + k.bonus);
+        const actualOklad = getEmployeeActualOklad(e);
+        const tot = Math.round(actualOklad + k.bonus);
+        const daysWorked = getEmployeeDaysWorked(e);
         totalSalary += tot;
         empPayload.push({
             id: e.id,
             emp_id: e.emp_id || e.moysklad_id,
             moysklad_id: e.emp_id || e.moysklad_id,
             name: e.name,
-            oklad: e.oklad,
+            base_oklad: e.oklad,
+            oklad: actualOklad,
+            days_worked: daysWorked,
+            working_days: davrKuni,
             bonus: k.bonus,
             total_salary: tot,
             group: e.group,

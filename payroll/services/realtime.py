@@ -1,7 +1,7 @@
 import logging
 import requests
 from decimal import Decimal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,16 @@ class RealtimeMoySkladEngine:
 
         d_from_str = f"{d_from} 00:00:00"
         d_to_str = f"{d_to} 23:59:59"
+
+        # Davr ish kunlari (barcha yakshanba kunlari chiqarib tashlanadi)
+        cur_dt = d_from
+        working_days = 0
+        while cur_dt <= d_to:
+            if cur_dt.weekday() != 6:  # 6 = Yakshanba (Sunday)
+                working_days += 1
+            cur_dt += timedelta(days=1)
+        if working_days <= 0:
+            working_days = 1
 
         rules = KPIRules.get_solo()
         categories = list(ProductionCategory.objects.all())
@@ -864,6 +874,8 @@ class RealtimeMoySkladEngine:
                 'group': main_group,
                 'dept': emp['dept'],
                 'oklad': oklad,
+                'working_days': working_days,
+                'days_worked': working_days,
                 'plan': main_plan,
                 'fact': main_fact,
                 'percent': round(main_pct, 2),
@@ -901,6 +913,7 @@ class RealtimeMoySkladEngine:
                 'month': month,
                 'date_from': str(d_from),
                 'date_to': str(d_to),
+                'working_days': working_days,
                 'status': 'calculated',
                 'status_display': 'Real-Time (MoySklad Jonli)',
                 'total_oklad': s_ok,

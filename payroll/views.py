@@ -1,6 +1,6 @@
 import json
 from decimal import Decimal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -66,6 +66,15 @@ def get_period_data(request):
         except Exception:
             d_from = date(2026, 10, 1)
             d_to = date(2026, 10, 31)
+
+    cur_dt = d_from
+    working_days = 0
+    while cur_dt <= d_to:
+        if cur_dt.weekday() != 6:
+            working_days += 1
+        cur_dt += timedelta(days=1)
+    if working_days <= 0:
+        working_days = 1
 
     # 1. Agar MoySklad token mavjud bo'lsa, to'g'ridan-to'g'ri REAL TIME rejimida hisoblab berish
     total_plans = {}
@@ -154,6 +163,8 @@ def get_period_data(request):
             'category_name': cat_name,
             'manager_rate': emp.manager_custom_rate,
             'oklad': float(it.oklad),
+            'working_days': working_days,
+            'days_worked': working_days,
             'plan': float(it.plan),
             'fact': float(it.fact),
             'percent': it.percent,
@@ -232,6 +243,7 @@ def get_period_data(request):
             'month': period.month,
             'date_from': period.date_from.strftime("%Y-%m-%d"),
             'date_to': period.date_to.strftime("%Y-%m-%d"),
+            'working_days': working_days,
             'status': period.status,
             'status_display': period.get_status_display(),
             'total_oklad': float(period.total_oklad),
