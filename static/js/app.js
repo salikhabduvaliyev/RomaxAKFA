@@ -195,10 +195,9 @@ function clearSellers() {
 
 // Operator tanlash va boshqaruv funksiyalari
 function isOpSelected(e) {
-    if (!state.selected_op_ids) return false;
-    const strId = String(e.id);
-    const strUid = String(e.emp_id || '');
-    return state.selected_op_ids.includes(strId) || (strUid && state.selected_op_ids.includes(strUid));
+    if (!state.selected_op_ids || !state.selected_op_ids.length) return false;
+    const uid = String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
+    return uid ? state.selected_op_ids.includes(uid) : false;
 }
 
 function getTargetOpCount() {
@@ -213,10 +212,11 @@ function getTargetOpCount() {
 function ensureSelectedOpIds() {
     const all = getAllCandidates();
     if (!state.selected_op_ids || !Array.isArray(state.selected_op_ids)) {
-        const defaultOps = all.filter(e => (e.position || '').toLowerCase().includes('оператор'));
-        state.selected_op_ids = defaultOps.length > 0
-            ? defaultOps.map(e => String(e.emp_id || e.id))
-            : all.slice(0, 2).map(e => String(e.emp_id || e.id));
+        const defaultOps = all.filter(e => {
+            const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
+            return p.includes('оператор');
+        });
+        state.selected_op_ids = defaultOps.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
     }
 }
 
@@ -304,7 +304,8 @@ function onOpTargetCountChange(val) {
 }
 
 function onOpCheckboxChange(empId, empUid, isChecked) {
-    const idToUse = String(empUid || empId);
+    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    if (!idToUse) return;
     ensureSelectedOpIds();
 
     if (isChecked) {
@@ -323,10 +324,9 @@ function onOpCheckboxChange(empId, empUid, isChecked) {
 
 // Sotuvchilar (Menejerlar) tanlash va boshqaruv funksiyalari
 function isMenSelected(e) {
-    if (!state.selected_men_ids) return false;
-    const strId = String(e.id);
-    const strUid = String(e.emp_id || '');
-    return state.selected_men_ids.includes(strId) || (strUid && state.selected_men_ids.includes(strUid));
+    if (!state.selected_men_ids || !state.selected_men_ids.length) return false;
+    const uid = String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
+    return uid ? state.selected_men_ids.includes(uid) : false;
 }
 
 function getTargetMenCount() {
@@ -342,12 +342,10 @@ function ensureSelectedMenIds() {
     const all = getAllCandidates();
     if (!state.selected_men_ids || !Array.isArray(state.selected_men_ids)) {
         const defaultMen = all.filter(e => {
-            const p = (e.position || '').toLowerCase();
+            const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
             return p.includes('сотувчи') || p.includes('sotuvchi') || p.includes('менеджер') || p.includes('рахбар');
         });
-        state.selected_men_ids = defaultMen.length > 0
-            ? defaultMen.map(e => String(e.emp_id || e.id))
-            : all.slice(0, 2).map(e => String(e.emp_id || e.id));
+        state.selected_men_ids = defaultMen.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
     }
 }
 
@@ -435,7 +433,8 @@ function onMenTargetCountChange(val) {
 }
 
 function onMenCheckboxChange(empId, empUid, isChecked) {
-    const idToUse = String(empUid || empId);
+    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    if (!idToUse) return;
     ensureSelectedMenIds();
 
     if (isChecked) {

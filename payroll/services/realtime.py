@@ -69,11 +69,20 @@ class RealtimeMoySkladEngine:
         employees = []
         if self.token:
             try:
+                # 1) Faol xodimlar
                 url_emp = f"{self.base_url}/entity/employee?limit=100&filter=archived=false"
                 resp_emp = requests.get(url_emp, headers=self.headers, timeout=self.timeout)
-                if resp_emp.status_code == 200:
-                    rows = resp_emp.json().get('rows', [])
-                    for i, r in enumerate(rows, 1):
+                rows = resp_emp.json().get('rows', []) if resp_emp.status_code == 200 else []
+
+                # 2) Arxivlangan xodimlar (oy davomida ishlagan yoki avans olganlar tushib qolmasligi uchun)
+                try:
+                    resp_arch = requests.get(f"{self.base_url}/entity/employee?limit=100&filter=archived=true", headers=self.headers, timeout=self.timeout)
+                    if resp_arch.status_code == 200:
+                        rows.extend(resp_arch.json().get('rows', []))
+                except Exception:
+                    pass
+
+                for i, r in enumerate(rows, 1):
                         name = (r.get('name') or r.get('fullName') or '').strip()
                         if name.lower() == 'administrator':
                             continue
@@ -432,6 +441,25 @@ class RealtimeMoySkladEngine:
                                         matched = True
                                         break
 
+                            # 5) Agar agent xodimlar ro'yxatida bo'lmasa ham, «ОЙЛИК ИШ ХАКИ» avansi yo'qolmasligi uchun uni xodim qilib qo'shish
+                            if not matched and agent_name:
+                                new_id = agent_id or f"adv-emp-{len(employees)+1}"
+                                new_emp = {
+                                    'id': new_id,
+                                    'ms_id': new_id,
+                                    'name': agent_name,
+                                    'position': "Xodim",
+                                    'group': "bosh",
+                                    'dept': "Boshqa (oklad)",
+                                    'oklad': 0.0,
+                                    'manager_rate': 1.0,
+                                    'order_num': len(employees) + 1,
+                                    'is_active': True
+                                }
+                                employees.append(new_emp)
+                                advances_by_emp[new_id] = advances_by_emp.get(new_id, 0.0) + summa
+                                matched = True
+
                         if len(rows) < 100:
                             break
                         offset += 100
@@ -497,7 +525,8 @@ class RealtimeMoySkladEngine:
 
         selected_op_ids = total_plans.get('selected_op_ids')
         if selected_op_ids is not None:
-            selected_op_ids = [str(x).strip() for x in selected_op_ids if str(x).strip()]
+            # Faqat haqiqiy UUID xodim ID lari olinadi (tasodifiy kichik sonli indekslar emas!)
+            selected_op_ids = [str(x).strip() for x in selected_op_ids if str(x).strip() and len(str(x).strip()) > 5]
         else:
             # Default: xodimlar ichidan lavozimida operator bo'lganlar
             selected_op_ids = [
@@ -507,7 +536,8 @@ class RealtimeMoySkladEngine:
 
         selected_men_ids = total_plans.get('selected_men_ids')
         if selected_men_ids is not None:
-            selected_men_ids = [str(x).strip() for x in selected_men_ids if str(x).strip()]
+            # Faqat haqiqiy UUID xodim ID lari olinadi (tasodifiy kichik sonli indekslar emas!)
+            selected_men_ids = [str(x).strip() for x in selected_men_ids if str(x).strip() and len(str(x).strip()) > 5]
         else:
             # Default: xodimlar ichidan lavozimida sotuvchi yoki menejer bo'lganlar
             selected_men_ids = [
@@ -636,8 +666,7 @@ class RealtimeMoySkladEngine:
             # Agar xodim operatorlar ro'yxatida tanlangan bo'lsa
             is_op_selected = (
                 str(emp_id) in selected_op_ids or 
-                str(ms_id) in selected_op_ids or 
-                str(i) in selected_op_ids
+                str(ms_id) in selected_op_ids
             )
             op_info = emp_op_sales.get(emp_id, {'order_count': 0, 'contract_sum': 0.0})
             op_fact = op_info['contract_sum']
@@ -660,8 +689,7 @@ class RealtimeMoySkladEngine:
             # Agar xodim sotuvchilar ro'yxatida tanlangan bo'lsa
             is_men_selected = (
                 str(emp_id) in selected_men_ids or 
-                str(ms_id) in selected_men_ids or 
-                str(i) in selected_men_ids
+                str(ms_id) in selected_men_ids
             )
             men_info = emp_men_sales.get(emp_id, {'order_count': 0, 'contract_sum': 0.0})
             men_fact = men_info['contract_sum']
@@ -712,7 +740,10 @@ class RealtimeMoySkladEngine:
             s_rest += rest_to_pay
 
             items_result.append({
-                'id': i,
+                'id': emp_id,
+                'emp_id': emp_id,
+                'ms_id': ms_id,
+                'order_num': i,
                 'emp_id': emp_id,
                 'ms_id': ms_id,
                 'name': emp['name'],

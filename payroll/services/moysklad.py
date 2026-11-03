@@ -97,6 +97,15 @@ class MoySkladService:
 
             data = resp.json()
             rows = data.get("rows", [])
+            
+            # Arxivlangan xodimlar (oy davomida ishlagan/avans olganlar tushib qolmasligi uchun)
+            try:
+                resp_arch = requests.get(f"{self.base_url}/entity/employee?limit=100&filter=archived=true", headers=self.headers, timeout=self.timeout)
+                if resp_arch.status_code == 200:
+                    rows.extend(resp_arch.json().get("rows", []))
+            except Exception:
+                pass
+
             created_count = 0
             updated_count = 0
 
