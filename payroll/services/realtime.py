@@ -577,10 +577,10 @@ class RealtimeMoySkladEngine:
         # 6. PLANLAR VA TARIFLARNI REAL TIME TAQSIMLASH:
         tot_plan_op = float(total_plans.get('op') or 2000000000.0)    # masalan 2 mlrd so'm
         tot_plan_men = float(total_plans.get('men') or 2400000000.0) # masalan 2.4 mlrd so'm
-        tarif_pvh = float(total_plans.get('tarif_pvh') or 60000.0)    # so'm/m2
-        tarif_termo = float(total_plans.get('tarif_termo') or 80000.0) # so'm/m2
-        tarif_montaj = float(total_plans.get('tarif_montaj') or 50000.0) # so'm/m2
-        tarif_oyna = float(total_plans.get('tarif_oyna') or 5000.0)     # so'm/m2
+        tarif_pvh = float(total_plans.get('tarif_pvh')) if total_plans.get('tarif_pvh') is not None else 60000.0    # so'm/m2
+        tarif_termo = float(total_plans.get('tarif_termo')) if total_plans.get('tarif_termo') is not None else 80000.0 # so'm/m2
+        tarif_montaj = float(total_plans.get('tarif_montaj')) if total_plans.get('tarif_montaj') is not None else 50000.0 # so'm/m2
+        tarif_oyna = float(total_plans.get('tarif_oyna')) if total_plans.get('tarif_oyna') is not None else 5000.0     # so'm/m2
 
         selected_op_ids = total_plans.get('selected_op_ids')
         if selected_op_ids is not None:

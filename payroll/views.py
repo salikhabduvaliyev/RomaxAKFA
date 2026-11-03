@@ -78,16 +78,16 @@ def get_period_data(request):
     if request.GET.get('total_plan_men'):
         try: total_plans['men'] = float(request.GET.get('total_plan_men'))
         except ValueError: pass
-    if request.GET.get('tarif_pvh'):
+    if request.GET.get('tarif_pvh') is not None and request.GET.get('tarif_pvh') != '':
         try: total_plans['tarif_pvh'] = float(request.GET.get('tarif_pvh'))
         except ValueError: pass
-    if request.GET.get('tarif_termo'):
+    if request.GET.get('tarif_termo') is not None and request.GET.get('tarif_termo') != '':
         try: total_plans['tarif_termo'] = float(request.GET.get('tarif_termo'))
         except ValueError: pass
-    if request.GET.get('tarif_montaj'):
+    if request.GET.get('tarif_montaj') is not None and request.GET.get('tarif_montaj') != '':
         try: total_plans['tarif_montaj'] = float(request.GET.get('tarif_montaj'))
         except ValueError: pass
-    if request.GET.get('tarif_oyna'):
+    if request.GET.get('tarif_oyna') is not None and request.GET.get('tarif_oyna') != '':
         try: total_plans['tarif_oyna'] = float(request.GET.get('tarif_oyna'))
         except ValueError: pass
     if request.GET.get('selected_op_ids'):

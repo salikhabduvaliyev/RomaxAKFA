@@ -486,21 +486,30 @@ function applyOynaPlans() {
     ensureSelectedOynaIds();
     const selCount = (state.selected_oyna_ids && state.selected_oyna_ids.length) || 0;
     const totalSqm = (state.oyna_data && state.oyna_data.total_sqm) || 0;
-    const tarif = state.total_plans.tarif_oyna || 5000;
+    const tarif = (state.total_plans && state.total_plans.tarif_oyna !== undefined && state.total_plans.tarif_oyna !== null) 
+        ? state.total_plans.tarif_oyna 
+        : 5000;
     const totalFund = Math.round(totalSqm * tarif);
     const indSqm = selCount > 0 ? Number((totalSqm / selCount).toFixed(2)) : 0;
     const indBonus = selCount > 0 ? Math.round(totalFund / selCount) : 0;
+
+    if (state.oyna_data) {
+        state.oyna_data.tarif_oyna = tarif;
+        state.oyna_data.total_bonus = totalFund;
+        state.oyna_data.ind_bonus = indBonus;
+    }
 
     // Update oyna_summary
     if (state.oyna_summary) {
         state.oyna_summary.forEach(o => {
             const isSel = isOynaSelected(o);
             o.is_selected = isSel;
+            o.tarif = tarif;
             const hasManual = state.manual_oyna_facts && state.manual_oyna_facts[String(o.id)] !== undefined;
             if (hasManual) {
                 o.fact_m2 = state.manual_oyna_facts[String(o.id)];
                 o.is_manual = true;
-                o.bonus = Math.round(o.fact_m2 * (o.tarif || tarif));
+                o.bonus = Math.round(o.fact_m2 * tarif);
             } else {
                 o.fact_m2 = isSel ? indSqm : 0;
                 o.auto_fact_m2 = indSqm;
@@ -523,12 +532,26 @@ function applyOynaPlans() {
         it.total_salary = it.oklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     });
+
+    updateOynaUI();
 }
 
 function updateOynaUI() {
     const selCount = (state.selected_oyna_ids && state.selected_oyna_ids.length) || 0;
     const badge = document.getElementById('oynaSelectedBadge');
     if (badge) badge.textContent = `${selCount} nafar biriktirilgan`;
+
+    const tarif = (state.total_plans && state.total_plans.tarif_oyna !== undefined && state.total_plans.tarif_oyna !== null)
+        ? state.total_plans.tarif_oyna
+        : 5000;
+    const totalSqm = (state.oyna_data && state.oyna_data.total_sqm) || 0;
+    const totalFund = Math.round(totalSqm * tarif);
+
+    const tarifBadge = document.getElementById('badgeOynaTarif');
+    if (tarifBadge) tarifBadge.textContent = `Tarif: ${f(tarif)} so'm/m²`;
+
+    const fundBadge = document.getElementById('badgeOynaFund');
+    if (fundBadge) fundBadge.textContent = `KPI Jamg'arma: ${f(totalFund)} so'm`;
 }
 
 function onOynaCheckboxChange(empId, empUid, isChecked) {
@@ -560,12 +583,17 @@ function onOynaVolumeInput(empId, val) {
     if (!state.manual_oyna_facts) state.manual_oyna_facts = {};
     state.manual_oyna_facts[String(empId)] = num;
 
+    const tarif = (state.total_plans && state.total_plans.tarif_oyna !== undefined && state.total_plans.tarif_oyna !== null)
+        ? state.total_plans.tarif_oyna
+        : 5000;
+
     if (state.oyna_summary) {
         const o = state.oyna_summary.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
         if (o) {
             o.fact_m2 = num;
             o.is_manual = true;
-            o.bonus = Math.round(num * (o.tarif || state.total_plans.tarif_oyna || 5000));
+            o.tarif = tarif;
+            o.bonus = Math.round(num * tarif);
             o.total_salary = (o.oklad || 0) + o.bonus;
 
             const bEl = document.getElementById(`oyna-bonus-${o.id}`);
@@ -729,7 +757,7 @@ function renderOynaRows() {
                         </span>
                     </div>
                 </td>
-                <td>${f(o.tarif || state.total_plans.tarif_oyna || 5000)} <span class="note">so'm</span></td>
+                <td><b>${f(o.tarif !== undefined ? o.tarif : (state.total_plans.tarif_oyna || 5000))}</b> <span class="note">so'm</span></td>
                 <td><b id="oyna-bonus-${o.id}" style="color:${isSel && o.bonus > 0 ? 'var(--ok)' : 'var(--tx-muted)'}; font-size:14px;">${f(o.bonus)}</b></td>
                 <td><b>${f(o.oklad)}</b></td>
                 <td><b id="oyna-tot-${o.id}" style="color:var(--tx-main); font-size:14px;">${f(o.total_salary)}</b></td>
@@ -1076,7 +1104,8 @@ async function loadPeriodData() {
                     if (state.manual_oyna_facts[String(o.id)] !== undefined) {
                         o.fact_m2 = state.manual_oyna_facts[String(o.id)];
                         o.is_manual = true;
-                        o.bonus = Math.round(o.fact_m2 * (o.tarif || state.total_plans.tarif_oyna || 5000));
+                        o.tarif = state.total_plans.tarif_oyna || 5000;
+                        o.bonus = Math.round(o.fact_m2 * (state.total_plans.tarif_oyna || 5000));
                         o.total_salary = (o.oklad || 0) + o.bonus;
                     }
                 });
@@ -1464,7 +1493,8 @@ function renderPlan() {
                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                     <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Jami: ${f(od.total_sqm || 0, 2)} m²</span>
                     <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Sotuv: ${f(od.total_sum || 0)} so'm</span>
-                    <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Tarif: ${f(tp.tarif_oyna || 5000)} so'm/m²</span>
+                    <span id="badgeOynaTarif" class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Tarif: ${f(tp.tarif_oyna || 5000)} so'm/m²</span>
+                    <span id="badgeOynaFund" class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">KPI Jamg'arma: ${f(od.total_bonus || Math.round((od.total_sqm || 0) * (tp.tarif_oyna || 5000)))} so'm</span>
                     <span class="chip chip-status chip-ok">MoySklad Jonli Faktlar</span>
                 </div>
             </div>
@@ -1794,6 +1824,8 @@ function onTarifInput(cat, val) {
     if (oynaTableBody) {
         oynaTableBody.innerHTML = renderOynaRows();
     }
+    updateOynaUI();
+    onTarifChange(cat, num);
 }
 
 let tarifDebounceTimer = null;
@@ -1813,7 +1845,7 @@ function onTarifChange(cat, val) {
             tarif_pvh: tp.tarif_pvh,
             tarif_termo: tp.tarif_termo,
             tarif_montaj: tp.tarif_montaj,
-            tarif_oyna: tp.tarif_oyna || 5000
+            tarif_oyna: (tp.tarif_oyna !== undefined && tp.tarif_oyna !== null) ? tp.tarif_oyna : 5000
         };
         if (state.selected_op_ids && state.selected_op_ids.length) {
             pObj.selected_op_ids = state.selected_op_ids.join(',');
@@ -1833,6 +1865,9 @@ function onTarifChange(cat, val) {
                     if (data.montaj_summary) state.montaj_summary = data.montaj_summary;
                     if (data.oyna_summary) state.oyna_summary = data.oyna_summary;
                     if (data.oyna_data) state.oyna_data = data.oyna_data;
+                    if (data.total_plans && data.total_plans.tarif_oyna !== undefined) {
+                        state.total_plans.tarif_oyna = data.total_plans.tarif_oyna;
+                    }
                     if (data.items) {
                         data.items.forEach(fresh => {
                             const local = state.items.find(i => i.id === fresh.id || i.emp_id === fresh.emp_id);
@@ -1851,12 +1886,14 @@ function onTarifChange(cat, val) {
                             }
                         });
                     }
+                    applyOynaPlans();
                     const prodTableBody = document.getElementById('productionTableBody');
                     if (prodTableBody) prodTableBody.innerHTML = renderProductionRows();
                     const montTableBody = document.getElementById('montajTableBody');
                     if (montTableBody) montTableBody.innerHTML = renderMontajRows();
                     const oynaTableBody = document.getElementById('oynaTableBody');
                     if (oynaTableBody) oynaTableBody.innerHTML = renderOynaRows();
+                    updateOynaUI();
                 }
             }).catch(e => console.error(e));
     }, 300);
