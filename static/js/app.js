@@ -49,138 +49,217 @@ const G_NAMES = {
 
 const ROLE_CATEGORIES = [
     { id: 'all', name: 'Barchasi', icon: '👥' },
-    { id: 'mgmt', name: 'Раҳбарият', icon: '👑', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.1)' },
-    { id: 'hr', name: 'HR бўлими', icon: '📋', color: '#db2777', bgColor: 'rgba(219, 39, 119, 0.1)' },
-    { id: 'sales', name: 'Сотув ва Шоурум', icon: '🛍️', color: '#2563eb', bgColor: 'rgba(37, 99, 235, 0.1)' },
-    { id: 'prod', name: 'Ишлаб чиқариш', icon: '🏭', color: '#059669', bgColor: 'rgba(5, 150, 105, 0.1)' },
-    { id: 'montaj', name: 'Монтаж гуруҳи', icon: '🔧', color: '#0284c7', bgColor: 'rgba(2, 132, 199, 0.1)' },
-    { id: 'logistics', name: 'Омбор ва Логистика', icon: '📦', color: '#d97706', bgColor: 'rgba(217, 119, 6, 0.1)' },
-    { id: 'service', name: 'Хизмат кўрсатиш', icon: '🍽️', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)' }
+    { id: 'mgmt', name: 'Раҳбарият', icon: '👑', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.1)', order: 1 },
+    { id: 'hr', name: 'HR бўлими', icon: '📋', color: '#db2777', bgColor: 'rgba(219, 39, 119, 0.1)', order: 2 },
+    { id: 'sales', name: 'Сотув менежерлари', icon: '🛍️', color: '#2563eb', bgColor: 'rgba(37, 99, 235, 0.1)', order: 3 },
+    { id: 'op', name: 'Операторлар', icon: '📞', color: '#0ea5e9', bgColor: 'rgba(14, 165, 233, 0.1)', order: 4 },
+    { id: 'draft', name: 'Чизмачилар', icon: '📐', color: '#8b5cf6', bgColor: 'rgba(139, 92, 246, 0.1)', order: 5 },
+    { id: 'lead_prod', name: 'Цех бошлиғи ва Бригадирлар', icon: '🎖️', color: '#059669', bgColor: 'rgba(5, 150, 105, 0.1)', order: 6 },
+    { id: 'oyna', name: 'Ойнакчилар', icon: '🪟', color: '#0d9488', bgColor: 'rgba(13, 148, 136, 0.1)', order: 7 },
+    { id: 'prod', name: 'Цех ишчилари (ПВХ/ТЕРМО)', icon: '🏭', color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.1)', order: 8 },
+    { id: 'montaj', name: 'Монтажчилар', icon: '🔧', color: '#0284c7', bgColor: 'rgba(2, 132, 199, 0.1)', order: 9 },
+    { id: 'warehouse', name: 'Омборчи', icon: '📦', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)', order: 10 },
+    { id: 'driver', name: 'Шофёрлар', icon: '🚚', color: '#d97706', bgColor: 'rgba(217, 119, 6, 0.1)', order: 11 },
+    { id: 'service', name: 'Ошпаз', icon: '🍽️', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)', order: 12 }
 ];
 
 function getEmployeeRoleCategory(emp) {
-    if (!emp) return { id: 'other', name: 'Бошқалар', badge: '👤 Бошқа', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)', order: 8 };
+    if (!emp) return { id: 'other', groupName: 'Бошқалар', icon: '👤', cleanPosition: 'Бошқа', badge: '👤 Бошқа', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)', order: 99 };
     const name = (emp.name || '').toLowerCase();
     const pos = (emp.position || '').toLowerCase();
     const dept = (emp.dept || '').toLowerCase();
     const grp = (emp.group || '').toLowerCase();
     const full = `${name} ${pos} ${dept} ${emp.category_name || ''}`.toLowerCase();
 
-    // 1. Rahbariyat (Management / Leadership)
-    if (full.includes('рахбар') || full.includes('раҳбар') || full.includes('директор') || full.includes('руководитель') || full.includes('иш юритувчи') || full.includes('тимур турдиев') || (full.includes('менежер') && !full.includes('сотув'))) {
+    // 1. Раҳбарият (Management / Leadership)
+    if (full.includes('рахбар') || full.includes('раҳбар') || full.includes('директор') || full.includes('тимур турдиев') || (full.startsWith('менежер') || full.includes(' менежер'))) {
+        let clean = 'Менеджер';
+        if (full.includes('элмирза') || full.includes('бош директор')) clean = 'Бош директор';
+        else if (full.includes('тимур')) clean = 'Раҳбар ўринбосари / Молия';
         return {
             id: 'mgmt',
-            name: 'Раҳбарият',
-            badge: '👑 Раҳбар',
+            groupName: 'Раҳбарият',
+            icon: '👑',
+            cleanPosition: clean,
+            badge: '👑 ' + clean,
             color: '#7c3aed',
             bgColor: 'rgba(124, 58, 237, 0.1)',
             order: 1
         };
     }
 
-    // 2. HR va Boshqaruv / Ma'muriyat (HR / Admin)
-    if (full.includes('hr') || full.includes('кадр') || full.includes('бухгалтер') || full.includes('хисобчи') || full.includes('админ')) {
+    // 2. HR бўлими (HR / Personnel)
+    if (full.includes('hr') || full.includes('кадр') || full.includes('бухгалтер') || full.includes('хисобчи')) {
         return {
             id: 'hr',
-            name: 'HR бўлими',
-            badge: '📋 HR бўлими',
+            groupName: 'HR бўлими',
+            icon: '📋',
+            cleanPosition: 'HR менежер',
+            badge: '📋 HR менежер',
             color: '#db2777',
             bgColor: 'rgba(219, 39, 119, 0.1)',
             order: 2
         };
     }
 
-    // 3. Sotuv va Shourum (Sales, Operators, Draftsmen) - Sho'fyorlar logistikaga o'tadi
-    if ((full.includes('сотув') || full.includes('оператор') || full.includes('чизмачи') || grp === 'sot' || grp === 'op') && !full.includes('шофёр') && !full.includes('шофер')) {
-        let subBadge = '🛍️ Сотувчи';
-        if (full.includes('оператор') || grp === 'op') subBadge = '📞 Оператор';
-        else if (full.includes('чизмачи')) subBadge = '📐 Чизмачи';
+    // 3. Чизмачилар (Showroom Draftsmen / Designers) - BEFORE sales
+    if (full.includes('чизмачи') || full.includes('чизма') || full.includes('дизайнер')) {
+        return {
+            id: 'draft',
+            groupName: 'Чизмачилар',
+            icon: '📐',
+            cleanPosition: 'Чизмачи',
+            badge: '📐 Чизмачи',
+            color: '#8b5cf6',
+            bgColor: 'rgba(139, 92, 246, 0.1)',
+            order: 5
+        };
+    }
+
+    // 4. Операторлар (Showroom / Call Center Operators) - BEFORE sales
+    if (full.includes('оператор') || grp === 'op') {
+        return {
+            id: 'op',
+            groupName: 'Операторлар',
+            icon: '📞',
+            cleanPosition: 'Шоурум оператори',
+            badge: '📞 Оператор',
+            color: '#0ea5e9',
+            bgColor: 'rgba(14, 165, 233, 0.1)',
+            order: 4
+        };
+    }
+
+    // 5. Сотув менежерлари (Sales Managers)
+    if ((full.includes('сотув') || grp === 'men') && !full.includes('шофёр') && !full.includes('шофер')) {
         return {
             id: 'sales',
-            name: 'Сотув ва Шоурум',
-            badge: subBadge,
+            groupName: 'Сотув менежерлари',
+            icon: '🛍️',
+            cleanPosition: 'Сотув менежери',
+            badge: '🛍️ Сотув менежери',
             color: '#2563eb',
             bgColor: 'rgba(37, 99, 235, 0.1)',
             order: 3
         };
     }
 
-    // 4. Ishlab chiqarish (Tsex, PVX, Termo, Oyna)
-    if (full.includes('цех') || full.includes('пвх') || full.includes('термо') || full.includes('мастер') || full.includes('бригадир') || full.includes('ойна') || dept.includes('ойнакчи')) {
-        let subBadge = '🏭 Ишлаб чиқариш';
-        if (full.includes('бошлиги') || full.includes('бошлиғи') || full.includes('уста') || full.includes('бригадир') || full.includes('мастер')) {
-            subBadge = '🎖️ Бригадир / Мастер';
-        } else if (full.includes('ойна')) {
-            subBadge = '🪟 Ойнакчи';
-        }
+    // 6. Цех бошлиғи ва Бригадирлар (Foremen / Masters / Heads)
+    if (full.includes('цех бошлиги') || full.includes('цех бошлиғи') || full.includes('бригадир') || full.includes('мастер') || full.includes('малика')) {
+        let clean = 'Цех бошлиғи';
+        if (full.includes('пвх') && full.includes('бригадир')) clean = 'Бригадир (ПВХ)';
+        else if (full.includes('термо') && full.includes('бригадир')) clean = 'Бригадир (ТЕРМО)';
+        else if (full.includes('малика')) clean = 'Мастер (ПВХ)';
         return {
-            id: 'prod',
-            name: 'Ишлаб чиқариш',
-            badge: subBadge,
+            id: 'lead_prod',
+            groupName: 'Цех бошлиғи ва Бригадирлар',
+            icon: '🎖️',
+            cleanPosition: clean,
+            badge: '🎖️ ' + clean,
             color: '#059669',
             bgColor: 'rgba(5, 150, 105, 0.1)',
-            order: 4
-        };
-    }
-
-    // 5. Montaj guruhi
-    if (full.includes('монтаж') || grp === 'montaj' || dept.includes('монтаж')) {
-        let subBadge = '🔧 Монтажчи';
-        if (full.includes('бошлиги') || full.includes('бошлиғи')) {
-            subBadge = '🎖️ Монтаж бошлиғи';
-        }
-        return {
-            id: 'montaj',
-            name: 'Монтаж гуруҳи',
-            badge: subBadge,
-            color: '#0284c7',
-            bgColor: 'rgba(2, 132, 199, 0.1)',
-            order: 5
-        };
-    }
-
-    // 6. Ombor va Logistika (Ta'minot, Haydovchi, Omborchi)
-    if (full.includes('омбор') || full.includes('шофёр') || full.includes('шофер') || full.includes('haydovchi')) {
-        return {
-            id: 'logistics',
-            name: 'Омбор ва Логистика',
-            badge: full.includes('омбор') ? '📦 Омборчи' : '🚚 Шофёр',
-            color: '#d97706',
-            bgColor: 'rgba(217, 119, 6, 0.1)',
             order: 6
         };
     }
 
-    // 7. Xizmat ko'rsatish / Oshxona / Boshqalar
-    if (full.includes('ошпаз') || full.includes('ошхона') || full.includes('қоровул') || full.includes('тозалик') || full.includes('фаррош')) {
+    // 7. Ойнакчилар (Glass workshop)
+    if (full.includes('ойна') || full.includes('ойнакчи') || full.includes('ойначи') || dept.includes('ойна')) {
         return {
-            id: 'service',
-            name: 'Хизмат кўрсатиш',
-            badge: full.includes('ошпаз') ? '🍽️ Ошпаз' : '🧹 Хизматчи',
-            color: '#4b5563',
-            bgColor: 'rgba(75, 85, 99, 0.1)',
+            id: 'oyna',
+            groupName: 'Ойнакчилар',
+            icon: '🪟',
+            cleanPosition: 'Ойнакчи',
+            badge: '🪟 Ойнакчи',
+            color: '#0d9488',
+            bgColor: 'rgba(13, 148, 136, 0.1)',
             order: 7
         };
     }
 
-    if (grp === 'ish') {
+    // 8. Монтажчилар (Installation)
+    if (full.includes('монтаж') || grp === 'montaj' || dept.includes('монтаж')) {
+        let clean = 'Монтажчи';
+        if (full.includes('бошлиг') || full.includes('бошлиғи')) clean = 'Монтаж бошлиғи';
+        else if (full.includes('фаргона') || full.includes('фарғона')) clean = 'Монтажчи (Фарғона)';
+        return {
+            id: 'montaj',
+            groupName: 'Монтажчилар',
+            icon: '🔧',
+            cleanPosition: clean,
+            badge: '🔧 ' + clean,
+            color: '#0284c7',
+            bgColor: 'rgba(2, 132, 199, 0.1)',
+            order: 9
+        };
+    }
+
+    // 9. Омборчи (Warehouse)
+    if (full.includes('омбор') || full.includes('склад')) {
+        return {
+            id: 'warehouse',
+            groupName: 'Омборчи',
+            icon: '📦',
+            cleanPosition: 'Омборчи',
+            badge: '📦 Омборчи',
+            color: '#f59e0b',
+            bgColor: 'rgba(245, 158, 11, 0.1)',
+            order: 10
+        };
+    }
+
+    // 10. Шофёрлар (Drivers / Logistics)
+    if (full.includes('шофёр') || full.includes('шофер') || full.includes('haydovchi')) {
+        return {
+            id: 'driver',
+            groupName: 'Шофёрлар',
+            icon: '🚚',
+            cleanPosition: 'Шофёр',
+            badge: '🚚 Шофёр',
+            color: '#d97706',
+            bgColor: 'rgba(217, 119, 6, 0.1)',
+            order: 11
+        };
+    }
+
+    // 11. Ошпаз (Kitchen / Service)
+    if (full.includes('ошпаз') || full.includes('ошхона') || full.includes('повар') || full.includes('фаррош') || full.includes('қоровул')) {
+        const clean = full.includes('ошпаз') ? 'Ошпаз' : 'Хизмат кўрсатиш';
+        return {
+            id: 'service',
+            groupName: 'Ошпаз',
+            icon: '🍽️',
+            cleanPosition: clean,
+            badge: '🍽️ ' + clean,
+            color: '#6b7280',
+            bgColor: 'rgba(107, 114, 128, 0.1)',
+            order: 12
+        };
+    }
+
+    // 12. Цех ишчилари (ПВХ ва ТЕРМО)
+    if (full.includes('пвх') || full.includes('термо') || grp === 'ish') {
+        const clean = full.includes('термо') ? 'ТЕРМО ишчиси' : 'ПВХ ишчиси';
         return {
             id: 'prod',
-            name: 'Ишлаб чиқариш',
-            badge: '🏭 Ишчи',
-            color: '#059669',
-            bgColor: 'rgba(5, 150, 105, 0.1)',
-            order: 4
+            groupName: 'Цех ишчилари (ПВХ ва ТЕРМО)',
+            icon: '🏭',
+            cleanPosition: clean,
+            badge: '🏭 ' + clean,
+            color: '#10b981',
+            bgColor: 'rgba(16, 185, 129, 0.1)',
+            order: 8
         };
     }
 
     return {
         id: 'other',
-        name: 'Бошқалар',
-        badge: '👤 Бошқа',
+        groupName: 'Бошқалар',
+        icon: '👤',
+        cleanPosition: emp.position || 'Бошқа',
+        badge: '👤 ' + (emp.position || 'Бошқа'),
         color: '#4b5563',
         bgColor: 'rgba(75, 85, 99, 0.1)',
-        order: 8
+        order: 99
     };
 }
 
@@ -193,12 +272,12 @@ function sortEmployeesByRole(list) {
             return catA.order - catB.order;
         }
 
-        // Sub-sorting within same department:
+        // Sub-sorting within same department/group:
         // Leaders / Masters / Brigadiers first
-        const titleA = `${a.name || ''} ${a.position || ''}`.toLowerCase();
-        const titleB = `${b.name || ''} ${b.position || ''}`.toLowerCase();
-        const isLeadA = titleA.includes('рахбар') || titleA.includes('раҳбар') || titleA.includes('бошлиг') || titleA.includes('бошлиғи') || titleA.includes('бригадир') || titleA.includes('мастер') || titleA.includes('уста');
-        const isLeadB = titleB.includes('рахбар') || titleB.includes('раҳбар') || titleB.includes('бошлиг') || titleB.includes('бошлиғи') || titleB.includes('бригадир') || titleB.includes('мастер') || titleB.includes('уста');
+        const titleA = `${a.name || ''} ${catA.cleanPosition || ''}`.toLowerCase();
+        const titleB = `${b.name || ''} ${catB.cleanPosition || ''}`.toLowerCase();
+        const isLeadA = titleA.includes('директор') || titleA.includes('рахбар') || titleA.includes('раҳбар') || titleA.includes('бошлиг') || titleA.includes('бошлиғи') || titleA.includes('бригадир');
+        const isLeadB = titleB.includes('директор') || titleB.includes('рахбар') || titleB.includes('раҳбар') || titleB.includes('бошлиг') || titleB.includes('бошлиғи') || titleB.includes('бригадир');
         if (isLeadA && !isLeadB) return -1;
         if (!isLeadA && isLeadB) return 1;
 
@@ -1410,11 +1489,8 @@ function renderPlan() {
 
         return `
             <tr>
-                <td>
-                    <b>${e.name}</b>
-                    <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-size:10px; font-weight:600; padding:1px 6px; margin-left:6px;">${cat.badge}</span>
-                </td>
-                <td class="l">${e.position}</td>
+                <td><b>${e.name}</b></td>
+                <td class="l"><span style="color:${cat.color}; font-weight:600;">${cat.icon} ${cat.cleanPosition}</span></td>
                 <td>
                     ${e.group === 'bosh' || e.group === 'ish' ? '—' : `
                         <input type="text" inputmode="numeric" id="emp-plan-${e.id}" class="styled-input" style="width:145px; font-weight:600; text-align:right;" value="${f(e.plan)}" oninput="handleFormattedNumberInput(this, v => { const it = state.items.find(x => String(x.id) === '${e.id}'); if (it) it.plan = v; })">
@@ -2095,12 +2171,10 @@ function renderCalcRows() {
     const search = (state.calcSearchTerm || '').toLowerCase().trim();
 
     const filtered = activeItems.filter(e => {
-        if (roleFilter !== 'all') {
-            const cat = getEmployeeRoleCategory(e);
-            if (cat.id !== roleFilter) return false;
-        }
+        const cat = getEmployeeRoleCategory(e);
+        if (roleFilter !== 'all' && cat.id !== roleFilter) return false;
         if (search) {
-            const full = `${e.name || ''} ${e.position || ''}`.toLowerCase();
+            const full = `${e.name || ''} ${e.position || ''} ${cat.cleanPosition || ''} ${cat.groupName || ''}`.toLowerCase();
             if (!full.includes(search)) return false;
         }
         return true;
@@ -2144,8 +2218,8 @@ function renderCalcRows() {
             const catCount = activeItems.filter(x => getEmployeeRoleCategory(x).id === cat.id).length;
             sectionHeader = `
                 <tr style="background:var(--bg); border-top:2px solid var(--bd);">
-                    <td colspan="9" style="padding:8px 12px; font-weight:700; font-size:12px; color:${cat.color}; letter-spacing:0.3px;">
-                        ${cat.badge} &nbsp;·&nbsp; <span style="font-weight:500; font-size:11px; opacity:0.85;">${catCount} nafar xodim</span>
+                    <td colspan="9" style="padding:7px 12px; font-weight:700; font-size:12px; color:${cat.color}; letter-spacing:0.3px;">
+                        ${cat.icon} ${cat.groupName.toUpperCase()} &nbsp;·&nbsp; <span style="font-weight:500; font-size:11px; opacity:0.85;">${catCount} nafar xodim</span>
                     </td>
                 </tr>
             `;
@@ -2154,11 +2228,10 @@ function renderCalcRows() {
         const rowHtml = `
             <tr>
                 <td>
-                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                        <b>${e.name}</b>
-                        <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-weight:600; font-size:11px; padding:1px 6px;">${cat.badge}</span>
-                    </div>
-                    <span class="note">${e.position || ''}</span>
+                    <b>${e.name}</b><br>
+                    <span class="note" style="color:${cat.color}; font-weight:600; font-size:11px;">
+                        ${cat.icon} ${cat.cleanPosition}
+                    </span>
                 </td>
                 <td><b>${f(e.oklad)}</b></td>
                 <td>${e.group === 'bosh' || e.group === 'ish' || isUnselected ? '—' : f(e.plan)}</td>
@@ -2458,11 +2531,8 @@ function renderFin() {
         if (tot > 0) nonZeroCount++;
         return `
             <tr>
-                <td>
-                    <b>${e.name}</b>
-                    <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-size:10px; font-weight:600; padding:1px 6px; margin-left:6px;">${cat.badge}</span>
-                </td>
-                <td>${e.position || e.category_name || G_NAMES[e.group]}</td>
+                <td><b>${e.name}</b></td>
+                <td><span style="color:${cat.color}; font-weight:600;">${cat.icon} ${cat.cleanPosition}</span></td>
                 <td><b>${f(tot)}</b></td>
                 <td class="l">${end} 23:45</td>
             </tr>
