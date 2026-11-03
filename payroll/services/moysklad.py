@@ -275,51 +275,12 @@ class MoySkladService:
                         if manager_emp_id:
                             men_fact = get_or_init(manager_emp_id)
                             men_fact["sales_sum"] += effective_sum
-
-                        # Owner (mas'ul xodim)
-                        owner_href = order.get("owner", {}).get("meta", {}).get("href", "")
-                        owner_id = owner_href.split("/")[-1] if owner_href else None
-                        if owner_id and not operator_emp_id and not manager_emp_id:
-                            ow_fact = get_or_init(owner_id)
-                            ow_fact["order_count"] += 1
-                            ow_fact["sales_sum"] += effective_sum
+                            men_fact["order_count"] += 1
 
             except Exception as e:
                 logger.warning(f"Error reading customerorder in sync_sales_facts: {e}")
 
-            # 2. DEMAND (Yuk xatlari / Otgruzkalar)
-            try:
-                demand_url = f"{self.base_url}/entity/demand?filter=moment>={d_from_str};moment<={d_to_str}&limit=100"
-                demand_resp = requests.get(demand_url, headers=self.headers, timeout=self.timeout)
-                if demand_resp.status_code == 200:
-                    for dem in demand_resp.json().get("rows", []):
-                        owner_href = dem.get("owner", {}).get("meta", {}).get("href", "")
-                        owner_id = owner_href.split("/")[-1] if owner_href else None
-                        d_sum = (dem.get("sum", 0) or 0) / 100.0
-                        if owner_id:
-                            f_item = get_or_init(owner_id)
-                            f_item["sales_sum"] += d_sum
-            except Exception as e:
-                logger.warning(f"Error reading demand: {e}")
-
-            # 3. CASHIN va PAYMENTIN (Kassa va bank savdo tushumlari)
-            try:
-                for p_ep in ["cashin", "paymentin"]:
-                    p_url = f"{self.base_url}/entity/{p_ep}?filter=moment>={d_from_str};moment<={d_to_str}&limit=100"
-                    p_resp = requests.get(p_url, headers=self.headers, timeout=self.timeout)
-                    if p_resp.status_code == 200:
-                        for p_doc in p_resp.json().get("rows", []):
-                            owner_href = p_doc.get("owner", {}).get("meta", {}).get("href", "")
-                            owner_id = owner_href.split("/")[-1] if owner_href else None
-                            p_sum = (p_doc.get("sum", 0) or 0) / 100.0
-                            if owner_id and p_sum > 0:
-                                f_item = get_or_init(owner_id)
-                                if f_item["sales_sum"] == 0:
-                                    f_item["sales_sum"] += p_sum
-            except Exception as e:
-                logger.warning(f"Error reading payments in: {e}")
-
-            # 4. ProductionCategory faktlarini yangilash (agar MoySklad'da hajmlar bo'lsa)
+            # 2. ProductionCategory faktlarini yangilash (agar MoySklad'da hajmlar bo'lsa)
             for cat_name, fact_vol in production_facts.items():
                 if fact_vol > 0:
                     ProductionCategory.objects.filter(name__icontains=cat_name).update(fact=fact_vol)

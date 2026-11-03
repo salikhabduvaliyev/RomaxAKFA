@@ -261,13 +261,12 @@ class RealtimeMoySkladEngine:
                                         matched_men = True
                                         break
 
-                            # C) Owner yoki tavsif bo'yicha sotuvchini aniqlash
-                            if not matched_men:
-                                owner_href = order.get('owner', {}).get('meta', {}).get('href', '')
-                                owner_id = owner_href.split('/')[-1] if owner_href else None
+                            # C) Agar «Сотув менеджери» атрибути бўш бўлса, фақат тавсифда (description) сотувчи исми ёзилган бўлса аниқланади
+                            # DIQQAT: owner_id (ҳужжатни киритган оператор/админ, масалан Тимур Турдиев) сотувчи ҳисобланмайди!
+                            if not matched_men and desc:
                                 for emp in employees:
                                     emp_first = emp['name'].split()[0].upper()
-                                    if emp['ms_id'] == owner_id or (len(emp_first) >= 4 and emp_first in desc):
+                                    if len(emp_first) >= 4 and emp_first in desc:
                                         slot = emp_men_sales.setdefault(emp['id'], {"order_count": 0, "contract_sum": 0.0})
                                         slot['order_count'] += 1
                                         slot['contract_sum'] += contract_sum
