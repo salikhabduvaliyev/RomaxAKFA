@@ -83,10 +83,16 @@ function handleFormattedNumberInput(inputEl, callback, isFloat = false) {
     let clean = origVal.replace(/[^\d.,]/g, '').replace(/,/g, '.');
     if (!isFloat) {
         clean = clean.replace(/\./g, '');
+        if (clean.length > 1 && clean.startsWith('0')) {
+            clean = clean.replace(/^0+/, '') || '0';
+        }
     } else {
         const dotIdx = clean.indexOf('.');
         if (dotIdx !== -1) {
             clean = clean.slice(0, dotIdx + 1) + clean.slice(dotIdx + 1).replace(/\./g, '');
+        }
+        if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
+            clean = clean.replace(/^0+/, '') || '0';
         }
     }
     
@@ -1894,8 +1900,8 @@ function renderCalc() {
         const isUnselected = (e.group === 'op' && !isOpSelected(e)) || (e.group === 'men' && !isMenSelected(e));
         const colorClass = (e.group === 'ish' ? (e.fact > 0 ? 'g' : '') : isUnselected ? '' : (k.percent >= 100 ? 'g' : k.percent >= 80 ? 'w' : 'r'));
 
-        const factDisplay = e.group === 'bosh' ? '—' : `<b>${f(e.fact)}</b> <span class="note">${e.group === 'ish' ? 'm²' : 'so\'m'}</span>`;
-        const percentDisplay = (e.group === 'bosh' || isUnselected) ? '—' : (e.group === 'ish' ? (e.fact > 0 ? `${f(e.fact)} m²` : '0 m² (faqat oklad)') : `${k.percent.toFixed(2).replace('.', ',')}%`);
+        const factDisplay = e.group === 'bosh' ? '—' : `<b>${f(e.fact, e.group === 'ish' ? 2 : 0)}</b> <span class="note">${e.group === 'ish' ? 'm²' : 'so\'m'}</span>`;
+        const percentDisplay = (e.group === 'bosh' || isUnselected) ? '—' : (e.group === 'ish' ? (e.fact > 0 ? `${f(e.fact, 2)} m²` : '0 m² (faqat oklad)') : `${k.percent.toFixed(2).replace('.', ',')}%`);
 
         const parts = [];
         if (e.kpi_prod > 0) parts.push(`Ishlab ch: ${f(e.kpi_prod)}`);
@@ -1925,7 +1931,8 @@ function renderCalc() {
                            class="styled-input" 
                            style="width:135px; font-weight:700; color:${k.bonus > 0 ? 'var(--ok)' : 'var(--tx-muted)'}; text-align:right;" 
                            value="${f(k.bonus)}" 
-                           oninput="handleFormattedNumberInput(this, v => onKpiBonusChange(${e.id}, v))"
+                           onfocus="this.select()"
+                           oninput="handleFormattedNumberInput(this, v => onKpiBonusChange('${e.id}', v))"
                            title="Avtomatik hisoblangan: ${f(auto.bonus)} so'm${isUnselected ? ' (Reja belgilanmagan)' : ''}. Ixtiyoriy o'zgartirish yoki qo'shimcha KPI kiritish mumkin.">
                     ${breakdownHtml}
                 </td>
@@ -2063,7 +2070,7 @@ function computeKpi(e) {
 // KPI bonusini joyida kiritish va real-time hisoblash
 function onKpiBonusChange(empId, val) {
     const num = typeof val === 'number' ? val : (parseFloat(val) || 0);
-    const item = state.items.find(i => i.id === empId);
+    const item = state.items.find(i => String(i.id) === String(empId) || String(i.emp_id) === String(empId));
     if (!item) return;
 
     item.custom_kpi = num;
@@ -2079,8 +2086,7 @@ function onKpiBonusChange(empId, val) {
 
     const restEl = document.getElementById(`emp-rest-${empId}`);
     if (restEl) {
-        restEl.className = rest < 0 ? 'r' : 'g';
-        restEl.innerHTML = `<b>${f(rest)}</b>`;
+        restEl.innerHTML = `<b class="${rest < 0 ? 'r' : 'g'}">${f(rest)}</b>`;
     }
 
     const inp = document.getElementById(`emp-kpi-${empId}`);
