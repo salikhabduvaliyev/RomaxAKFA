@@ -499,8 +499,12 @@ function clearSellers() {
 // Operator tanlash va boshqaruv funksiyalari
 function isOpSelected(e) {
     if (!state.selected_op_ids || !state.selected_op_ids.length) return false;
-    const uid = String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
-    return uid ? state.selected_op_ids.includes(uid) : false;
+    const candidates = [
+        e.id !== undefined && e.id !== null ? String(e.id) : null,
+        e.emp_id !== undefined && e.emp_id !== null ? String(e.emp_id) : null,
+        e.ms_id !== undefined && e.ms_id !== null ? String(e.ms_id) : null,
+    ].filter(Boolean);
+    return candidates.some(id => state.selected_op_ids.map(String).includes(id));
 }
 
 function getTargetOpCount() {
@@ -519,7 +523,7 @@ function ensureSelectedOpIds() {
             const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
             return p.includes('оператор');
         });
-        state.selected_op_ids = defaultOps.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
+        state.selected_op_ids = defaultOps.map(e => String(e.ms_id || e.emp_id || e.id)).filter(Boolean);
     }
 }
 
@@ -607,16 +611,17 @@ function onOpTargetCountChange(val) {
 }
 
 function onOpCheckboxChange(empId, empUid, isChecked) {
-    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    const idToUse = String(empUid || empId || '').trim();
     if (!idToUse) return;
     ensureSelectedOpIds();
 
+    const idsToRemove = [String(empId), String(empUid)].filter(Boolean);
     if (isChecked) {
-        if (!state.selected_op_ids.includes(idToUse)) {
+        if (!state.selected_op_ids.map(String).includes(idToUse)) {
             state.selected_op_ids.push(idToUse);
         }
     } else {
-        state.selected_op_ids = state.selected_op_ids.filter(id => id !== idToUse && id !== String(empId));
+        state.selected_op_ids = state.selected_op_ids.filter(id => !idsToRemove.includes(String(id)));
     }
 
     state.total_plans.op_target_count = state.selected_op_ids.length;
@@ -628,8 +633,12 @@ function onOpCheckboxChange(empId, empUid, isChecked) {
 // Sotuvchilar (Menejerlar) tanlash va boshqaruv funksiyalari
 function isMenSelected(e) {
     if (!state.selected_men_ids || !state.selected_men_ids.length) return false;
-    const uid = String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
-    return uid ? state.selected_men_ids.includes(uid) : false;
+    const candidates = [
+        e.id !== undefined && e.id !== null ? String(e.id) : null,
+        e.emp_id !== undefined && e.emp_id !== null ? String(e.emp_id) : null,
+        e.ms_id !== undefined && e.ms_id !== null ? String(e.ms_id) : null,
+    ].filter(Boolean);
+    return candidates.some(id => state.selected_men_ids.map(String).includes(id));
 }
 
 function getTargetMenCount() {
@@ -648,7 +657,7 @@ function ensureSelectedMenIds() {
             const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
             return p.includes('сотувчи') || p.includes('sotuvchi') || p.includes('менеджер') || p.includes('рахбар');
         });
-        state.selected_men_ids = defaultMen.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
+        state.selected_men_ids = defaultMen.map(e => String(e.ms_id || e.emp_id || e.id)).filter(Boolean);
     }
 }
 
@@ -736,16 +745,17 @@ function onMenTargetCountChange(val) {
 }
 
 function onMenCheckboxChange(empId, empUid, isChecked) {
-    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    const idToUse = String(empUid || empId || '').trim();
     if (!idToUse) return;
     ensureSelectedMenIds();
 
+    const idsToRemove = [String(empId), String(empUid)].filter(Boolean);
     if (isChecked) {
-        if (!state.selected_men_ids.includes(idToUse)) {
+        if (!state.selected_men_ids.map(String).includes(idToUse)) {
             state.selected_men_ids.push(idToUse);
         }
     } else {
-        state.selected_men_ids = state.selected_men_ids.filter(id => id !== idToUse && id !== String(empId));
+        state.selected_men_ids = state.selected_men_ids.filter(id => !idsToRemove.includes(String(id)));
     }
 
     state.total_plans.men_target_count = state.selected_men_ids.length;
@@ -757,8 +767,12 @@ function onMenCheckboxChange(empId, empUid, isChecked) {
 // Oyna (Oynakchi) xodimlarini biriktirish va boshqaruv funksiyalari
 function isOynaSelected(e) {
     if (!state.selected_oyna_ids || !state.selected_oyna_ids.length) return false;
-    const uid = String(e.ms_id || e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
-    return uid ? state.selected_oyna_ids.includes(uid) : false;
+    const candidates = [
+        e.id !== undefined && e.id !== null ? String(e.id) : null,
+        e.emp_id !== undefined && e.emp_id !== null ? String(e.emp_id) : null,
+        e.ms_id !== undefined && e.ms_id !== null ? String(e.ms_id) : null,
+    ].filter(Boolean);
+    return candidates.some(id => state.selected_oyna_ids.map(String).includes(id));
 }
 
 function ensureSelectedOynaIds() {
@@ -768,7 +782,7 @@ function ensureSelectedOynaIds() {
             const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
             return p.includes('ойнакчи') || p.includes('ойна') || p.includes('oynakchi');
         });
-        state.selected_oyna_ids = defaultOyna.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
+        state.selected_oyna_ids = defaultOyna.map(e => String(e.ms_id || e.emp_id || e.id)).filter(Boolean);
     }
 }
 
@@ -817,9 +831,17 @@ function applyOynaPlans() {
         const isSel = isOynaSelected(it);
         it.is_oyna_selected = isSel;
         it.kpi_oyna = o ? (o.is_selected ? o.bonus : 0) : (isSel ? indBonus : 0);
-        it.oyna_m2 = o ? (o.is_selected ? o.fact_m2 : 0) : (isSel ? indSqm : 0);
+        it.oyna_m2 = o ? (o.is_selected ? (o.fact_m2 || 0) : 0) : (isSel ? indSqm : 0);
+
+        const isGlassWorker = (it.group === 'ish' && (it.dept === 'Ойнакчи' || (it.position && it.position.toLowerCase().includes('ойна')))) || (o !== null);
+        if (isGlassWorker || it.group === 'ish') {
+            it.fact = Number(((it.prod_m2 || 0) + (it.montaj_m2 || 0) + (it.oyna_m2 || 0)).toFixed(2));
+            it.percent = it.fact > 0 ? 100 : 0;
+        }
+
         it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
-        it.total_salary = it.oklad + it.kpi_bonus;
+        const actualOklad = typeof getEmployeeActualOklad === 'function' ? getEmployeeActualOklad(it) : (it.oklad || 0);
+        it.total_salary = actualOklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     });
 
@@ -845,16 +867,17 @@ function updateOynaUI() {
 }
 
 function onOynaCheckboxChange(empId, empUid, isChecked) {
-    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    const idToUse = String(empUid || empId || '').trim();
     if (!idToUse) return;
     ensureSelectedOynaIds();
 
+    const idsToRemove = [String(empId), String(empUid)].filter(Boolean);
     if (isChecked) {
-        if (!state.selected_oyna_ids.includes(idToUse)) {
+        if (!state.selected_oyna_ids.map(String).includes(idToUse)) {
             state.selected_oyna_ids.push(idToUse);
         }
     } else {
-        state.selected_oyna_ids = state.selected_oyna_ids.filter(id => id !== idToUse && id !== String(empId));
+        state.selected_oyna_ids = state.selected_oyna_ids.filter(id => !idsToRemove.includes(String(id)));
     }
 
     state.total_plans.oyna_worker_count = state.selected_oyna_ids.length;
@@ -910,9 +933,13 @@ function onOynaVolumeInput(empId, val) {
     const it = state.items.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
     if (it) {
         const o = state.oyna_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
-        it.kpi_oyna = o ? o.bonus : 0;
+        it.oyna_m2 = o ? o.fact_m2 : num;
+        it.kpi_oyna = o ? o.bonus : Math.round(num * tarif);
+        it.fact = Number(((it.prod_m2 || 0) + (it.montaj_m2 || 0) + (it.oyna_m2 || 0)).toFixed(2));
+        it.percent = it.fact > 0 ? 100 : 0;
         it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
-        it.total_salary = it.oklad + it.kpi_bonus;
+        const actualOklad = typeof getEmployeeActualOklad === 'function' ? getEmployeeActualOklad(it) : (it.oklad || 0);
+        it.total_salary = actualOklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     }
 }
@@ -2041,7 +2068,8 @@ function onPlanChange(grp, val) {
             total_plan_men: tp.men,
             tarif_pvh: tp.tarif_pvh,
             tarif_termo: tp.tarif_termo,
-            tarif_montaj: tp.tarif_montaj
+            tarif_montaj: tp.tarif_montaj,
+            tarif_oyna: (tp.tarif_oyna !== undefined && tp.tarif_oyna !== null) ? tp.tarif_oyna : 5000
         };
         if (state.selected_op_ids && state.selected_op_ids.length) {
             pObj.selected_op_ids = state.selected_op_ids.join(',');
@@ -2049,22 +2077,39 @@ function onPlanChange(grp, val) {
         if (state.selected_men_ids && state.selected_men_ids.length) {
             pObj.selected_men_ids = state.selected_men_ids.join(',');
         }
+        if (state.selected_oyna_ids && state.selected_oyna_ids.length) {
+            pObj.selected_oyna_ids = state.selected_oyna_ids.join(',');
+        }
         const params = new URLSearchParams(pObj);
         fetch(`/api/period-data/?${params.toString()}`)
             .then(r => r.json())
             .then(data => {
                 if (data.success && data.items) {
+                    if (data.production_summary) state.production_summary = data.production_summary;
+                    if (data.montaj_summary) state.montaj_summary = data.montaj_summary;
+                    if (data.oyna_summary) state.oyna_summary = data.oyna_summary;
+                    if (data.oyna_data) state.oyna_data = data.oyna_data;
                     data.items.forEach(fresh => {
-                        const local = state.items.find(i => i.id === fresh.id);
+                        const local = state.items.find(i => i.id === fresh.id || i.emp_id === fresh.emp_id);
                         if (local) {
                             local.fact = fresh.fact;
                             local.advance = fresh.advance;
                             local.percent = fresh.percent;
                             local.kpi_bonus = fresh.kpi_bonus;
-                            local.total_salary = fresh.total_salary;
-                            local.rest_to_pay = fresh.rest_to_pay;
+                            local.kpi_prod = fresh.kpi_prod;
+                            local.kpi_montaj = fresh.kpi_montaj;
+                            local.kpi_oyna = fresh.kpi_oyna;
+                            local.kpi_op = fresh.kpi_op;
+                            local.kpi_men = fresh.kpi_men;
+                            local.prod_m2 = fresh.prod_m2;
+                            local.montaj_m2 = fresh.montaj_m2;
+                            local.oyna_m2 = fresh.oyna_m2;
+                            const actualOklad = typeof getEmployeeActualOklad === 'function' ? getEmployeeActualOklad(local) : (local.oklad || 0);
+                            local.total_salary = actualOklad + local.kpi_bonus;
+                            local.rest_to_pay = local.total_salary - local.advance;
                         }
                     });
+                    applyOynaPlans();
                 }
             }).catch(e => console.error(e));
     }, 300);
@@ -2109,8 +2154,14 @@ function onTarifInput(cat, val) {
             item.kpi_prod = prod ? prod.bonus : 0;
             item.kpi_montaj = mont ? mont.bonus : 0;
             item.kpi_oyna = (oyna && oyna.is_selected) ? oyna.bonus : 0;
+            item.oyna_m2 = (oyna && oyna.is_selected) ? (oyna.fact_m2 || 0) : 0;
+            if (item.group === 'ish') {
+                item.fact = Number(((item.prod_m2 || 0) + (item.montaj_m2 || 0) + (item.oyna_m2 || 0)).toFixed(2));
+                item.percent = item.fact > 0 ? 100 : 0;
+            }
             item.kpi_bonus = (item.kpi_prod || 0) + (item.kpi_montaj || 0) + (item.kpi_oyna || 0) + (item.kpi_op || 0) + (item.kpi_men || 0);
-            item.total_salary = item.oklad + item.kpi_bonus;
+            const actualOklad = typeof getEmployeeActualOklad === 'function' ? getEmployeeActualOklad(item) : (item.oklad || 0);
+            item.total_salary = actualOklad + item.kpi_bonus;
             item.rest_to_pay = item.total_salary - item.advance;
         }
     });
@@ -2184,8 +2235,13 @@ function onTarifChange(cat, val) {
                                 local.kpi_oyna = fresh.kpi_oyna;
                                 local.kpi_op = fresh.kpi_op;
                                 local.kpi_men = fresh.kpi_men;
-                                local.total_salary = fresh.total_salary;
-                                local.rest_to_pay = fresh.rest_to_pay;
+                                local.prod_m2 = fresh.prod_m2;
+                                local.montaj_m2 = fresh.montaj_m2;
+                                local.oyna_m2 = fresh.oyna_m2;
+                                local.is_oyna_selected = fresh.is_oyna_selected;
+                                const actualOklad = typeof getEmployeeActualOklad === 'function' ? getEmployeeActualOklad(local) : (local.oklad || 0);
+                                local.total_salary = actualOklad + local.kpi_bonus;
+                                local.rest_to_pay = local.total_salary - local.advance;
                             }
                         });
                     }
@@ -2355,6 +2411,9 @@ function onCalcSearch(val) {
 }
 
 function renderCalc() {
+    if (state.oyna_summary && state.oyna_summary.length) {
+        applyOynaPlans();
+    }
     const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
     const davrKuni = getPeriodWorkingDays();
 

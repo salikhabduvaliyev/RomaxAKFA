@@ -594,8 +594,7 @@ class RealtimeMoySkladEngine:
 
         selected_op_ids = total_plans.get('selected_op_ids')
         if selected_op_ids is not None:
-            # Faqat haqiqiy UUID xodim ID lari olinadi (tasodifiy kichik sonli indekslar emas!)
-            selected_op_ids = [str(x).strip() for x in selected_op_ids if str(x).strip() and len(str(x).strip()) > 5]
+            selected_op_ids = [str(x).strip() for x in selected_op_ids if str(x).strip()]
         else:
             # Default: xodimlar ichidan lavozimida operator bo'lganlar
             selected_op_ids = [
@@ -605,8 +604,7 @@ class RealtimeMoySkladEngine:
 
         selected_men_ids = total_plans.get('selected_men_ids')
         if selected_men_ids is not None:
-            # Faqat haqiqiy UUID xodim ID lari olinadi (tasodifiy kichik sonli indekslar emas!)
-            selected_men_ids = [str(x).strip() for x in selected_men_ids if str(x).strip() and len(str(x).strip()) > 5]
+            selected_men_ids = [str(x).strip() for x in selected_men_ids if str(x).strip()]
         else:
             # Default: xodimlar ichidan lavozimida sotuvchi yoki menejer bo'lganlar
             selected_men_ids = [
@@ -616,7 +614,7 @@ class RealtimeMoySkladEngine:
 
         selected_oyna_ids = total_plans.get('selected_oyna_ids')
         if selected_oyna_ids is not None:
-            selected_oyna_ids = [str(x).strip() for x in selected_oyna_ids if str(x).strip() and len(str(x).strip()) > 5]
+            selected_oyna_ids = [str(x).strip() for x in selected_oyna_ids if str(x).strip()]
         else:
             # Default: xodimlar ichidan oyna/oynakchi lavozimidagilar
             selected_oyna_ids = [
@@ -845,7 +843,7 @@ class RealtimeMoySkladEngine:
                 main_fact = round(prod_m2 + m_m2 + oyna_sqm, 2)
                 main_pct = 100.0 if main_fact > 0 else 0.0
                 main_group = 'ish'
-            elif prod_m2 > 0 or m_m2 > 0 or emp['dept'] in ["PVX bo'limi", "TERMO bo'limi", "Монтаж", "Ойнакчи"]:
+            elif prod_m2 > 0 or m_m2 > 0 or emp.get('dept') in ["PVX bo'limi", "TERMO bo'limi", "Монтаж", "Ойнакчи"] or any(k in f"{emp['name']} {emp['position']}".lower() for k in ["ойнакчи", "ойна", "oynakchi"]):
                 main_plan = 0.0
                 main_fact = round(prod_m2 + m_m2 + oyna_sqm, 2)
                 main_pct = 100.0 if main_fact > 0 else 0.0
