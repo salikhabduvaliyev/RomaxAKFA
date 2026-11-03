@@ -35,7 +35,9 @@ const state = {
         oyna_worker_count: 2
     },
     calced: false,
-    closed: false
+    closed: false,
+    calcRoleFilter: 'all',
+    calcSearchTerm: ''
 };
 
 const G_NAMES = {
@@ -44,6 +46,169 @@ const G_NAMES = {
     ish: 'Ishlab chiqarish / Montaj',
     bosh: 'Boshqa (faqat oklad)'
 };
+
+const ROLE_CATEGORIES = [
+    { id: 'all', name: 'Barchasi', icon: '👥' },
+    { id: 'mgmt', name: 'Раҳбарият', icon: '👑', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.1)' },
+    { id: 'hr', name: 'HR бўлими', icon: '📋', color: '#db2777', bgColor: 'rgba(219, 39, 119, 0.1)' },
+    { id: 'sales', name: 'Сотув ва Шоурум', icon: '🛍️', color: '#2563eb', bgColor: 'rgba(37, 99, 235, 0.1)' },
+    { id: 'prod', name: 'Ишлаб чиқариш', icon: '🏭', color: '#059669', bgColor: 'rgba(5, 150, 105, 0.1)' },
+    { id: 'montaj', name: 'Монтаж гуруҳи', icon: '🔧', color: '#0284c7', bgColor: 'rgba(2, 132, 199, 0.1)' },
+    { id: 'logistics', name: 'Омбор ва Логистика', icon: '📦', color: '#d97706', bgColor: 'rgba(217, 119, 6, 0.1)' },
+    { id: 'service', name: 'Хизмат кўрсатиш', icon: '🍽️', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)' }
+];
+
+function getEmployeeRoleCategory(emp) {
+    if (!emp) return { id: 'other', name: 'Бошқалар', badge: '👤 Бошқа', color: '#4b5563', bgColor: 'rgba(75, 85, 99, 0.1)', order: 8 };
+    const name = (emp.name || '').toLowerCase();
+    const pos = (emp.position || '').toLowerCase();
+    const dept = (emp.dept || '').toLowerCase();
+    const grp = (emp.group || '').toLowerCase();
+    const full = `${name} ${pos} ${dept} ${emp.category_name || ''}`.toLowerCase();
+
+    // 1. Rahbariyat (Management / Leadership)
+    if (full.includes('рахбар') || full.includes('раҳбар') || full.includes('директор') || full.includes('руководитель') || full.includes('иш юритувчи') || full.includes('тимур турдиев') || (full.includes('менежер') && !full.includes('сотув'))) {
+        return {
+            id: 'mgmt',
+            name: 'Раҳбарият',
+            badge: '👑 Раҳбар',
+            color: '#7c3aed',
+            bgColor: 'rgba(124, 58, 237, 0.1)',
+            order: 1
+        };
+    }
+
+    // 2. HR va Boshqaruv / Ma'muriyat (HR / Admin)
+    if (full.includes('hr') || full.includes('кадр') || full.includes('бухгалтер') || full.includes('хисобчи') || full.includes('админ')) {
+        return {
+            id: 'hr',
+            name: 'HR бўлими',
+            badge: '📋 HR бўлими',
+            color: '#db2777',
+            bgColor: 'rgba(219, 39, 119, 0.1)',
+            order: 2
+        };
+    }
+
+    // 3. Sotuv va Shourum (Sales, Operators, Draftsmen) - Sho'fyorlar logistikaga o'tadi
+    if ((full.includes('сотув') || full.includes('оператор') || full.includes('чизмачи') || grp === 'sot' || grp === 'op') && !full.includes('шофёр') && !full.includes('шофер')) {
+        let subBadge = '🛍️ Сотувчи';
+        if (full.includes('оператор') || grp === 'op') subBadge = '📞 Оператор';
+        else if (full.includes('чизмачи')) subBadge = '📐 Чизмачи';
+        return {
+            id: 'sales',
+            name: 'Сотув ва Шоурум',
+            badge: subBadge,
+            color: '#2563eb',
+            bgColor: 'rgba(37, 99, 235, 0.1)',
+            order: 3
+        };
+    }
+
+    // 4. Ishlab chiqarish (Tsex, PVX, Termo, Oyna)
+    if (full.includes('цех') || full.includes('пвх') || full.includes('термо') || full.includes('мастер') || full.includes('бригадир') || full.includes('ойна') || dept.includes('ойнакчи')) {
+        let subBadge = '🏭 Ишлаб чиқариш';
+        if (full.includes('бошлиги') || full.includes('бошлиғи') || full.includes('уста') || full.includes('бригадир') || full.includes('мастер')) {
+            subBadge = '🎖️ Бригадир / Мастер';
+        } else if (full.includes('ойна')) {
+            subBadge = '🪟 Ойнакчи';
+        }
+        return {
+            id: 'prod',
+            name: 'Ишлаб чиқариш',
+            badge: subBadge,
+            color: '#059669',
+            bgColor: 'rgba(5, 150, 105, 0.1)',
+            order: 4
+        };
+    }
+
+    // 5. Montaj guruhi
+    if (full.includes('монтаж') || grp === 'montaj' || dept.includes('монтаж')) {
+        let subBadge = '🔧 Монтажчи';
+        if (full.includes('бошлиги') || full.includes('бошлиғи')) {
+            subBadge = '🎖️ Монтаж бошлиғи';
+        }
+        return {
+            id: 'montaj',
+            name: 'Монтаж гуруҳи',
+            badge: subBadge,
+            color: '#0284c7',
+            bgColor: 'rgba(2, 132, 199, 0.1)',
+            order: 5
+        };
+    }
+
+    // 6. Ombor va Logistika (Ta'minot, Haydovchi, Omborchi)
+    if (full.includes('омбор') || full.includes('шофёр') || full.includes('шофер') || full.includes('haydovchi')) {
+        return {
+            id: 'logistics',
+            name: 'Омбор ва Логистика',
+            badge: full.includes('омбор') ? '📦 Омборчи' : '🚚 Шофёр',
+            color: '#d97706',
+            bgColor: 'rgba(217, 119, 6, 0.1)',
+            order: 6
+        };
+    }
+
+    // 7. Xizmat ko'rsatish / Oshxona / Boshqalar
+    if (full.includes('ошпаз') || full.includes('ошхона') || full.includes('қоровул') || full.includes('тозалик') || full.includes('фаррош')) {
+        return {
+            id: 'service',
+            name: 'Хизмат кўрсатиш',
+            badge: full.includes('ошпаз') ? '🍽️ Ошпаз' : '🧹 Хизматчи',
+            color: '#4b5563',
+            bgColor: 'rgba(75, 85, 99, 0.1)',
+            order: 7
+        };
+    }
+
+    if (grp === 'ish') {
+        return {
+            id: 'prod',
+            name: 'Ишлаб чиқариш',
+            badge: '🏭 Ишчи',
+            color: '#059669',
+            bgColor: 'rgba(5, 150, 105, 0.1)',
+            order: 4
+        };
+    }
+
+    return {
+        id: 'other',
+        name: 'Бошқалар',
+        badge: '👤 Бошқа',
+        color: '#4b5563',
+        bgColor: 'rgba(75, 85, 99, 0.1)',
+        order: 8
+    };
+}
+
+function sortEmployeesByRole(list) {
+    if (!list || !Array.isArray(list)) return [];
+    return [...list].sort((a, b) => {
+        const catA = getEmployeeRoleCategory(a);
+        const catB = getEmployeeRoleCategory(b);
+        if (catA.order !== catB.order) {
+            return catA.order - catB.order;
+        }
+
+        // Sub-sorting within same department:
+        // Leaders / Masters / Brigadiers first
+        const titleA = `${a.name || ''} ${a.position || ''}`.toLowerCase();
+        const titleB = `${b.name || ''} ${b.position || ''}`.toLowerCase();
+        const isLeadA = titleA.includes('рахбар') || titleA.includes('раҳбар') || titleA.includes('бошлиг') || titleA.includes('бошлиғи') || titleA.includes('бригадир') || titleA.includes('мастер') || titleA.includes('уста');
+        const isLeadB = titleB.includes('рахбар') || titleB.includes('раҳбар') || titleB.includes('бошлиг') || titleB.includes('бошлиғи') || titleB.includes('бригадир') || titleB.includes('мастер') || titleB.includes('уста');
+        if (isLeadA && !isLeadB) return -1;
+        if (!isLeadA && isLeadB) return 1;
+
+        // Oklad descending
+        if ((b.oklad || 0) !== (a.oklad || 0)) {
+            return (b.oklad || 0) - (a.oklad || 0);
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+}
 
 const PD_UNITS = {
     op: 'so\'m',
@@ -1221,7 +1386,9 @@ function renderPlan() {
         `;
     }).join('');
 
-    const empRows = items.map((e, idx) => {
+    const sortedPlanItems = sortEmployeesByRole(items);
+    const empRows = sortedPlanItems.map((e) => {
+        const cat = getEmployeeRoleCategory(e);
         let deptChip = '';
         if (isMenSelected(e)) {
             deptChip = `<span class="chip chip-ok" style="font-weight:600;">✓ Sotuvchi (${f(ind_men)} so'm)</span>`;
@@ -1229,28 +1396,33 @@ function renderPlan() {
         } else if (isOpSelected(e)) {
             deptChip = `<span class="chip chip-ok" style="font-weight:600;">✓ Operator (${f(ind_op)} so'm)</span>`;
             e.plan = ind_op;
-        } else if (e.dept === 'Монтаж') {
-            deptChip = `<span class="chip" style="background:rgba(14,165,233,0.12); color:#0284c7; font-weight:600;">Монтаж бўлими (Алоҳида)</span>`;
-        } else if (e.dept === 'PVX bo\'limi') {
-            deptChip = `<span class="chip" style="background:rgba(37,99,235,0.08); color:#2563eb; font-weight:600;">PVX бўлими</span>`;
-        } else if (e.dept === 'TERMO bo\'limi') {
-            deptChip = `<span class="chip" style="background:rgba(234,88,12,0.08); color:#ea580c; font-weight:600;">TERMO бўлими</span>`;
+        } else if (e.dept === 'Монтаж' || cat.id === 'montaj') {
+            deptChip = `<span class="chip" style="background:rgba(14,165,233,0.12); color:#0284c7; font-weight:600;">${cat.badge}</span>`;
+        } else if (cat.id === 'prod') {
+            deptChip = `<span class="chip" style="background:rgba(5,150,105,0.1); color:#059669; font-weight:600;">${cat.badge}</span>`;
+        } else if (cat.id === 'mgmt') {
+            deptChip = `<span class="chip" style="background:rgba(124,58,237,0.1); color:#7c3aed; font-weight:600;">${cat.badge}</span>`;
+        } else if (cat.id === 'hr') {
+            deptChip = `<span class="chip" style="background:rgba(219,39,119,0.1); color:#db2777; font-weight:600;">${cat.badge}</span>`;
         } else {
-            deptChip = `<span class="note">Faqat oklad</span>`;
+            deptChip = `<span class="note">${cat.badge}</span>`;
         }
 
         return `
             <tr>
-                <td><b>${e.name}</b></td>
+                <td>
+                    <b>${e.name}</b>
+                    <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-size:10px; font-weight:600; padding:1px 6px; margin-left:6px;">${cat.badge}</span>
+                </td>
                 <td class="l">${e.position}</td>
                 <td>
                     ${e.group === 'bosh' || e.group === 'ish' ? '—' : `
-                        <input type="text" inputmode="numeric" id="emp-plan-${e.id}" class="styled-input" style="width:145px; font-weight:600; text-align:right;" value="${f(e.plan)}" oninput="handleFormattedNumberInput(this, v => { state.items[${idx}].plan = v; })">
+                        <input type="text" inputmode="numeric" id="emp-plan-${e.id}" class="styled-input" style="width:145px; font-weight:600; text-align:right;" value="${f(e.plan)}" oninput="handleFormattedNumberInput(this, v => { const it = state.items.find(x => String(x.id) === '${e.id}'); if (it) it.plan = v; })">
                     `}
                 </td>
                 <td class="l">${deptChip}</td>
                 <td>
-                    <input type="checkbox" ${e.is_active ? 'checked' : ''} onchange="state.items[${idx}].is_active=this.checked; updateHeaderStatus();">
+                    <input type="checkbox" ${e.is_active ? 'checked' : ''} onchange="const it = state.items.find(x => String(x.id) === '${e.id}'); if (it) { it.is_active = this.checked; updateHeaderStatus(); }">
                 </td>
             </tr>
         `;
@@ -1917,22 +2089,34 @@ function recalcCategoryPlans() {
 }
 
 // 2-TAB: Nachisleniya
-function renderCalc() {
-    const activeItems = state.items.filter(i => i.is_active);
+function renderCalcRows() {
+    const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
+    const roleFilter = state.calcRoleFilter || 'all';
+    const search = (state.calcSearchTerm || '').toLowerCase().trim();
 
-    let s = { ok: 0, b: 0, av: 0, t: 0, r: 0 };
+    const filtered = activeItems.filter(e => {
+        if (roleFilter !== 'all') {
+            const cat = getEmployeeRoleCategory(e);
+            if (cat.id !== roleFilter) return false;
+        }
+        if (search) {
+            const full = `${e.name || ''} ${e.position || ''}`.toLowerCase();
+            if (!full.includes(search)) return false;
+        }
+        return true;
+    });
 
-    const rows = activeItems.map((e) => {
+    if (!filtered.length) {
+        return `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--tx-muted);" class="note">Tanlangan filter yoki qidiruv bo'yicha xodimlar topilmadi.</td></tr>`;
+    }
+
+    let lastCatId = null;
+    return filtered.map((e) => {
+        const cat = getEmployeeRoleCategory(e);
         const auto = getAutoKpi(e);
         const k = computeKpi(e);
         const tot = e.oklad + k.bonus;
         const rest = tot - e.advance;
-
-        s.ok += e.oklad;
-        s.b += k.bonus;
-        s.av += e.advance;
-        s.t += tot;
-        s.r += rest;
 
         const isUnselected = (e.group === 'op' && !isOpSelected(e)) || (e.group === 'men' && !isMenSelected(e));
         const colorClass = (e.group === 'ish' ? (e.fact > 0 ? 'g' : '') : isUnselected ? '' : (k.percent >= 100 ? 'g' : k.percent >= 80 ? 'w' : 'r'));
@@ -1954,9 +2138,28 @@ function renderCalc() {
             breakdownHtml = `<div style="font-size:10px; color:var(--tx-muted); margin-top:3px;">${parts[0]}</div>`;
         }
 
-        return `
+        let sectionHeader = '';
+        if (roleFilter === 'all' && !search && cat.id !== lastCatId) {
+            lastCatId = cat.id;
+            const catCount = activeItems.filter(x => getEmployeeRoleCategory(x).id === cat.id).length;
+            sectionHeader = `
+                <tr style="background:var(--bg); border-top:2px solid var(--bd);">
+                    <td colspan="9" style="padding:8px 12px; font-weight:700; font-size:12px; color:${cat.color}; letter-spacing:0.3px;">
+                        ${cat.badge} &nbsp;·&nbsp; <span style="font-weight:500; font-size:11px; opacity:0.85;">${catCount} nafar xodim</span>
+                    </td>
+                </tr>
+            `;
+        }
+
+        const rowHtml = `
             <tr>
-                <td><b>${e.name}</b><br><span class="note">${e.position}</span></td>
+                <td>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <b>${e.name}</b>
+                        <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-weight:600; font-size:11px; padding:1px 6px;">${cat.badge}</span>
+                    </div>
+                    <span class="note">${e.position || ''}</span>
+                </td>
                 <td><b>${f(e.oklad)}</b></td>
                 <td>${e.group === 'bosh' || e.group === 'ish' || isUnselected ? '—' : f(e.plan)}</td>
                 <td>${factDisplay}</td>
@@ -1978,7 +2181,37 @@ function renderCalc() {
                 <td id="emp-rest-${e.id}"><b class="${rest < 0 ? 'r' : 'g'}">${f(rest)}</b></td>
             </tr>
         `;
+        return sectionHeader + rowHtml;
     }).join('');
+}
+
+function setCalcRoleFilter(roleId) {
+    state.calcRoleFilter = roleId;
+    draw();
+}
+
+function onCalcSearch(val) {
+    state.calcSearchTerm = (val || '').toLowerCase().trim();
+    const tbody = document.getElementById('calcTableBody');
+    if (tbody) {
+        tbody.innerHTML = renderCalcRows();
+    }
+}
+
+function renderCalc() {
+    const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
+
+    let s = { ok: 0, b: 0, av: 0, t: 0, r: 0 };
+    activeItems.forEach((e) => {
+        const k = computeKpi(e);
+        const tot = e.oklad + k.bonus;
+        const rest = tot - e.advance;
+        s.ok += e.oklad;
+        s.b += k.bonus;
+        s.av += e.advance;
+        s.t += tot;
+        s.r += rest;
+    });
 
     return `
         <!-- Qadamlar -->
@@ -1999,11 +2232,52 @@ function renderCalc() {
 
         <!-- Jadval -->
         <div class="card">
+            <!-- Lavozim va bo'limlar bo'yicha filter paneli -->
+            <div style="margin-bottom:14px; display:flex; flex-direction:column; gap:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-weight:700; font-size:14px; color:var(--tx-main);">Lavozim va bo'limlar bo'yicha tartib va filter:</span>
+                        <span class="chip" style="font-size:11px; font-weight:600;">Jami ${activeItems.length} xodim</span>
+                    </div>
+                    <div>
+                        <input type="text" 
+                               id="calcSearchInput"
+                               placeholder="🔍 Xodim yoki lavozim qidirish..." 
+                               class="styled-input" 
+                               style="width:230px; font-size:12px; padding:6px 10px;"
+                               value="${state.calcSearchTerm || ''}"
+                               oninput="onCalcSearch(this.value)">
+                    </div>
+                </div>
+
+                <!-- Bo'limlar bo'yicha filter tugmalari (Chips) -->
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                    ${ROLE_CATEGORIES.map(rc => {
+                        const count = rc.id === 'all' 
+                            ? activeItems.length 
+                            : activeItems.filter(e => getEmployeeRoleCategory(e).id === rc.id).length;
+                        if (count === 0 && rc.id !== 'all') return '';
+                        const isActive = (state.calcRoleFilter || 'all') === rc.id;
+                        return `
+                            <button type="button" 
+                                    class="b" 
+                                    onclick="setCalcRoleFilter('${rc.id}')"
+                                    style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:600; cursor:pointer; transition:all 0.15s ease;
+                                           ${isActive 
+                                             ? 'background:var(--pr); color:#fff; border:1px solid var(--pr); box-shadow:0 2px 6px rgba(37,99,235,0.25);' 
+                                             : 'background:var(--bg); color:var(--tx-main); border:1px solid var(--bd);'}">
+                                ${rc.icon ? rc.icon + ' ' : ''}${rc.name} (${count})
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+
             <div class="sc">
                 <table>
                     <thead>
                         <tr>
-                            <th>Xodim</th>
+                            <th>Xodim (Lavozim bo'yicha)</th>
                             <th>Oklad</th>
                             <th>Plan</th>
                             <th>Jonli Fakt (MoySklad)</th>
@@ -2014,7 +2288,7 @@ function renderCalc() {
                             <th>Qoldiq</th>
                         </tr>
                     </thead>
-                    <tbody>${rows}</tbody>
+                    <tbody id="calcTableBody">${renderCalcRows()}</tbody>
                     <tfoot>
                         <tr>
                             <td>Jami</td>
@@ -2171,20 +2445,24 @@ function onKpiBonusChange(empId, val) {
 
 // 3-TAB: Yakunlash va MoySklad
 function renderFin() {
-    const activeItems = state.items.filter(i => i.is_active);
+    const activeItems = sortEmployeesByRole(state.items.filter(i => i.is_active));
     const end = $('#d2').value;
 
     let totalSalary = 0;
     let nonZeroCount = 0;
     const empRows = activeItems.map(e => {
+        const cat = getEmployeeRoleCategory(e);
         const k = computeKpi(e);
         const tot = Math.round(e.oklad + k.bonus);
         totalSalary += tot;
         if (tot > 0) nonZeroCount++;
         return `
             <tr>
-                <td><b>${e.name}</b></td>
-                <td>${e.category_name || G_NAMES[e.group]}</td>
+                <td>
+                    <b>${e.name}</b>
+                    <span class="chip" style="background:${cat.bgColor}; color:${cat.color}; font-size:10px; font-weight:600; padding:1px 6px; margin-left:6px;">${cat.badge}</span>
+                </td>
+                <td>${e.position || e.category_name || G_NAMES[e.group]}</td>
                 <td><b>${f(tot)}</b></td>
                 <td class="l">${end} 23:45</td>
             </tr>
