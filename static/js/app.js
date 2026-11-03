@@ -7,25 +7,32 @@ const state = {
     categories: [],
     production_summary: [],
     montaj_summary: [],
+    oyna_summary: [],
+    oyna_data: null,
     items: [],
     all_employees: [],
     config: null,
     selected_op_ids: null,
     selected_men_ids: null,
+    selected_oyna_ids: null,
     manual_production_facts: {},
+    manual_montaj_facts: {},
+    manual_oyna_facts: {},
     total_plans: {
         op: 2000000000,
         men: 2400000000,
         tarif_pvh: 60000,
         tarif_termo: 80000,
         tarif_montaj: 50000,
+        tarif_oyna: 5000,
         op_count: 2,
         op_target_count: 2,
         men_count: 2,
         men_target_count: 2,
         pvh_count: 8,
         termo_count: 1,
-        montaj_count: 5
+        montaj_count: 5,
+        oyna_worker_count: 2
     },
     calced: false,
     closed: false
@@ -451,6 +458,281 @@ function onMenCheckboxChange(empId, empUid, isChecked) {
     onPlanChange('men', state.total_plans.men);
 }
 
+// Oyna (Oynakchi) xodimlarini biriktirish va boshqaruv funksiyalari
+function isOynaSelected(e) {
+    if (!state.selected_oyna_ids || !state.selected_oyna_ids.length) return false;
+    const uid = String(e.ms_id || e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : '') || '').trim();
+    return uid ? state.selected_oyna_ids.includes(uid) : false;
+}
+
+function ensureSelectedOynaIds() {
+    const all = getAllCandidates();
+    if (!state.selected_oyna_ids || !Array.isArray(state.selected_oyna_ids)) {
+        const defaultOyna = all.filter(e => {
+            const p = `${e.name || ''} ${e.position || ''}`.toLowerCase();
+            return p.includes('ойнакчи') || p.includes('ойна') || p.includes('oynakchi');
+        });
+        state.selected_oyna_ids = defaultOyna.map(e => String(e.emp_id || (typeof e.id === 'string' && e.id.length > 5 ? e.id : ''))).filter(Boolean);
+    }
+}
+
+function applyOynaPlans() {
+    ensureSelectedOynaIds();
+    const selCount = (state.selected_oyna_ids && state.selected_oyna_ids.length) || 0;
+    const totalSqm = (state.oyna_data && state.oyna_data.total_sqm) || 0;
+    const tarif = state.total_plans.tarif_oyna || 5000;
+    const totalFund = Math.round(totalSqm * tarif);
+    const indSqm = selCount > 0 ? Number((totalSqm / selCount).toFixed(2)) : 0;
+    const indBonus = selCount > 0 ? Math.round(totalFund / selCount) : 0;
+
+    // Update oyna_summary
+    if (state.oyna_summary) {
+        state.oyna_summary.forEach(o => {
+            const isSel = isOynaSelected(o);
+            o.is_selected = isSel;
+            const hasManual = state.manual_oyna_facts && state.manual_oyna_facts[String(o.id)] !== undefined;
+            if (hasManual) {
+                o.fact_m2 = state.manual_oyna_facts[String(o.id)];
+                o.is_manual = true;
+                o.bonus = Math.round(o.fact_m2 * (o.tarif || tarif));
+            } else {
+                o.fact_m2 = isSel ? indSqm : 0;
+                o.auto_fact_m2 = indSqm;
+                o.is_manual = false;
+                o.bonus = isSel ? indBonus : 0;
+            }
+            o.total_salary = (o.oklad || 0) + o.bonus;
+            o.status_label = isSel ? (o.is_manual ? "Qo'lda kiritildi" : `Biriktirilgan (${o.fact_m2} m²)`) : "Biriktirilmagan (0 m²)";
+        });
+    }
+
+    // Update items
+    state.items.forEach(it => {
+        const o = state.oyna_summary ? state.oyna_summary.find(x => String(x.id) === String(it.id) || String(x.emp_id) === String(it.id)) : null;
+        const isSel = isOynaSelected(it);
+        it.is_oyna_selected = isSel;
+        it.kpi_oyna = o ? (o.is_selected ? o.bonus : 0) : (isSel ? indBonus : 0);
+        it.oyna_m2 = o ? (o.is_selected ? o.fact_m2 : 0) : (isSel ? indSqm : 0);
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.total_salary = it.oklad + it.kpi_bonus;
+        it.rest_to_pay = it.total_salary - it.advance;
+    });
+}
+
+function updateOynaUI() {
+    const selCount = (state.selected_oyna_ids && state.selected_oyna_ids.length) || 0;
+    const badge = document.getElementById('oynaSelectedBadge');
+    if (badge) badge.textContent = `${selCount} nafar biriktirilgan`;
+}
+
+function onOynaCheckboxChange(empId, empUid, isChecked) {
+    const idToUse = String(empUid || (empId && String(empId).length > 5 ? empId : ''));
+    if (!idToUse) return;
+    ensureSelectedOynaIds();
+
+    if (isChecked) {
+        if (!state.selected_oyna_ids.includes(idToUse)) {
+            state.selected_oyna_ids.push(idToUse);
+        }
+    } else {
+        state.selected_oyna_ids = state.selected_oyna_ids.filter(id => id !== idToUse && id !== String(empId));
+    }
+
+    state.total_plans.oyna_worker_count = state.selected_oyna_ids.length;
+    applyOynaPlans();
+
+    const oynaTableBody = document.getElementById('oynaTableBody');
+    if (oynaTableBody) {
+        oynaTableBody.innerHTML = renderOynaRows();
+    }
+    updateOynaUI();
+    onTarifChange('oyna', state.total_plans.tarif_oyna || 5000);
+}
+
+function onOynaVolumeInput(empId, val) {
+    const num = typeof val === 'number' ? Math.max(0, val) : Math.max(0, parseFloat(val) || 0);
+    if (!state.manual_oyna_facts) state.manual_oyna_facts = {};
+    state.manual_oyna_facts[String(empId)] = num;
+
+    if (state.oyna_summary) {
+        const o = state.oyna_summary.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
+        if (o) {
+            o.fact_m2 = num;
+            o.is_manual = true;
+            o.bonus = Math.round(num * (o.tarif || state.total_plans.tarif_oyna || 5000));
+            o.total_salary = (o.oklad || 0) + o.bonus;
+
+            const bEl = document.getElementById(`oyna-bonus-${o.id}`);
+            if (bEl) {
+                bEl.textContent = f(o.bonus);
+                bEl.style.color = o.bonus > 0 ? 'var(--ok)' : 'var(--tx-muted)';
+            }
+            const tEl = document.getElementById(`oyna-tot-${o.id}`);
+            if (tEl) tEl.textContent = f(o.total_salary);
+
+            const inEl = document.getElementById(`oyna-fact-${o.id}`);
+            if (inEl) inEl.style.color = num > 0 ? '#059669' : 'var(--tx-muted)';
+
+            const sEl = document.getElementById(`oyna-status-${o.id}`);
+            if (sEl) sEl.innerHTML = `<span class="chip" style="background:rgba(234,88,12,0.12); color:#ea580c; font-weight:700; font-size:11px;">Qo'lda kiritildi</span>`;
+
+            const rwEl = document.getElementById(`oyna-reset-wrap-${o.id}`);
+            if (rwEl) {
+                rwEl.innerHTML = `<button class="b b-secondary" style="padding:2px 6px; font-size:11px; margin-left:4px; height:24px;" onclick="resetOynaVolume('${o.id}')" title="↺ Avto: ${o.auto_fact_m2 || 0} m²">↺ Avto</button>`;
+            }
+        }
+    }
+
+    const it = state.items.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
+    if (it) {
+        const o = state.oyna_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
+        it.kpi_oyna = o ? o.bonus : 0;
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.total_salary = it.oklad + it.kpi_bonus;
+        it.rest_to_pay = it.total_salary - it.advance;
+    }
+}
+
+function resetOynaVolume(empId) {
+    if (state.manual_oyna_facts) {
+        delete state.manual_oyna_facts[String(empId)];
+    }
+    applyOynaPlans();
+    const oynaTableBody = document.getElementById('oynaTableBody');
+    if (oynaTableBody) {
+        oynaTableBody.innerHTML = renderOynaRows();
+    } else {
+        draw();
+    }
+}
+
+function addOynaWorker(empId) {
+    if (!empId) return;
+    ensureSelectedOynaIds();
+    if (!state.selected_oyna_ids.includes(String(empId))) {
+        state.selected_oyna_ids.push(String(empId));
+    }
+    const all = getAllCandidates();
+    const emp = all.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
+    if (emp && state.oyna_summary && !state.oyna_summary.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId))) {
+        state.oyna_summary.push({
+            id: emp.id,
+            emp_id: emp.id,
+            ms_id: emp.emp_id || emp.id,
+            name: emp.name,
+            position: emp.position,
+            dept: emp.dept || 'Ойнакчи',
+            is_selected: true,
+            fact_m2: 0,
+            auto_fact_m2: 0,
+            tarif: state.total_plans.tarif_oyna || 5000,
+            bonus: 0,
+            oklad: emp.oklad || 0,
+            total_salary: emp.oklad || 0,
+            status_label: 'Biriktirildi'
+        });
+    }
+    applyOynaPlans();
+    const oynaTableBody = document.getElementById('oynaTableBody');
+    if (oynaTableBody) {
+        oynaTableBody.innerHTML = renderOynaRows();
+    }
+    const selOpt = document.getElementById('selectAddOynaWorker');
+    if (selOpt) {
+        selOpt.innerHTML = `<option value="">+ Xodim tanlang...</option>${renderOynaCandidateOptions()}`;
+        selOpt.value = '';
+    }
+    updateOynaUI();
+    onTarifChange('oyna', state.total_plans.tarif_oyna || 5000);
+}
+
+function renderOynaCandidateOptions() {
+    const all = getAllCandidates();
+    const existingIds = (state.oyna_summary || []).map(x => String(x.id));
+    const available = all.filter(e => !existingIds.includes(String(e.id)));
+    return available.map(e => `<option value="${e.id}">${e.name} (${e.position || 'Xodim'})</option>`).join('');
+}
+
+function renderOynaItemsBreakdown() {
+    const items = (state.oyna_data && state.oyna_data.items) || [];
+    if (!items.length) return '';
+    return `
+        <div style="margin:8px 0; padding:8px 12px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:6px;">
+            <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                <span>📦 MoySklad «Сырьё → ОЙНАЛАР» бўйича давр сотуви таркиби:</span>
+                <span class="note" style="font-weight:600; color:var(--tx-muted);">${items.length} турдаги ойна</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                ${items.map(it => `
+                    <span class="chip" style="background:var(--card); border:1px solid rgba(16,185,129,0.2); font-size:12px; padding:3px 8px;">
+                        <b>${it.name}:</b> ${f(it.quantity, 2)} (${f(it.sum)} so'm)
+                    </span>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderOynaRows() {
+    const list = state.oyna_summary || [];
+    if (!list.length) {
+        return `<tr><td colspan="9" style="text-align:center; padding:16px;" class="note">Oynakchi xodimlari topilmadi. Pastdagi ro'yxatdan yangi xodim qo'shishingiz mumkin.</td></tr>`;
+    }
+
+    return list.map(o => {
+        const isSel = isOynaSelected(o);
+        const isManual = o.is_manual || (state.manual_oyna_facts && state.manual_oyna_facts[String(o.id)] !== undefined);
+        const autoVal = o.auto_fact_m2 !== undefined ? o.auto_fact_m2 : (o.fact_m2 || 0);
+
+        let statusBadge = '';
+        if (isManual) {
+            statusBadge = `<span class="chip" style="background:rgba(234,88,12,0.12); color:#ea580c; font-weight:700; font-size:11px;">Qo'lda kiritildi</span>`;
+        } else if (isSel) {
+            statusBadge = `<span class="chip chip-status chip-ok" style="font-weight:600;">✓ Biriktirilgan</span>`;
+        } else {
+            statusBadge = `<span class="note" style="color:var(--tx-muted); font-weight:500;">Biriktirilmagan</span>`;
+        }
+
+        return `
+            <tr style="background:${isSel ? 'rgba(37,99,235,0.02)' : 'transparent'};">
+                <td style="text-align:center;">
+                    <input type="checkbox" 
+                           class="styled-checkbox" 
+                           data-emp-id="${o.id}" 
+                           data-emp-uid="${o.ms_id || o.emp_id || o.id}" 
+                           ${isSel ? 'checked' : ''} 
+                           onchange="onOynaCheckboxChange('${o.id}', '${o.ms_id || o.emp_id || o.id}', this.checked)"
+                           title="Ushbu xodimga oyna KPI hisoblash uchun belgilang">
+                </td>
+                <td><b>${o.name}</b><br><span class="note">${o.position}</span></td>
+                <td><span class="chip" style="background:rgba(16,185,129,0.12); color:#059669; font-weight:600;">${o.dept || 'Ойнакчи'}</span></td>
+                <td style="text-align:right;">
+                    <div style="display:inline-flex; align-items:center; gap:4px; justify-content:flex-end;">
+                        <input type="text" 
+                               inputmode="decimal"
+                               id="oyna-fact-${o.id}" 
+                               class="styled-input" 
+                               ${!isSel ? 'disabled' : ''}
+                               style="width:90px; font-weight:700; text-align:right; font-size:13px; color:${isSel ? '#059669' : 'var(--tx-muted)'}; opacity:${isSel ? '1' : '0.5'};" 
+                               value="${o.fact_m2 ? f(o.fact_m2, 2) : '0'}" 
+                               oninput="handleFormattedNumberInput(this, v => onOynaVolumeInput('${o.id}', v), true)"
+                               title="Taqsimlangan avtomatik hajm: ${autoVal} m². O'zgartirish yoki qo'lda kiritish mumkin.">
+                        <span class="note" style="font-weight:600;">m²</span>
+                        <span id="oyna-reset-wrap-${o.id}">
+                            ${isManual ? `<button class="b b-secondary" style="padding:2px 6px; font-size:11px; margin-left:4px; height:24px;" onclick="resetOynaVolume('${o.id}')" title="Avtomatik taqsimotga qaytarish (↺ Avto: ${autoVal} m²)">↺ Avto</button>` : ''}
+                        </span>
+                    </div>
+                </td>
+                <td>${f(o.tarif || state.total_plans.tarif_oyna || 5000)} <span class="note">so'm</span></td>
+                <td><b id="oyna-bonus-${o.id}" style="color:${isSel && o.bonus > 0 ? 'var(--ok)' : 'var(--tx-muted)'}; font-size:14px;">${f(o.bonus)}</b></td>
+                <td><b>${f(o.oklad)}</b></td>
+                <td><b id="oyna-tot-${o.id}" style="color:var(--tx-main); font-size:14px;">${f(o.total_salary)}</b></td>
+                <td id="oyna-status-${o.id}">${statusBadge}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function renderOpSelectionItems() {
     const all = getAllCandidates();
     const filtered = all.filter(e => {
@@ -555,7 +837,7 @@ function onProductionVolumeInput(empId, val) {
     if (it) {
         const p = state.production_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
         it.kpi_prod = p ? p.bonus : 0;
-        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
         it.total_salary = it.oklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     }
@@ -578,7 +860,7 @@ function resetProductionVolume(empId) {
     if (it) {
         const p = state.production_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
         it.kpi_prod = p ? p.bonus : 0;
-        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
         it.total_salary = it.oklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     }
@@ -630,7 +912,7 @@ function onMontajVolumeInput(empId, val) {
     if (it) {
         const m = state.montaj_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
         it.kpi_montaj = m ? m.bonus : 0;
-        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
         it.total_salary = it.oklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     }
@@ -654,7 +936,7 @@ function resetMontajVolume(empId) {
     if (it) {
         const m = state.montaj_summary?.find(x => String(x.id) === String(empId) || String(x.emp_id) === String(empId));
         it.kpi_montaj = m ? m.bonus : 0;
-        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+        it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
         it.total_salary = it.oklad + it.kpi_bonus;
         it.rest_to_pay = it.total_salary - it.advance;
     }
@@ -720,13 +1002,17 @@ async function loadPeriodData() {
             total_plan_men: tp.men,
             tarif_pvh: tp.tarif_pvh,
             tarif_termo: tp.tarif_termo,
-            tarif_montaj: tp.tarif_montaj
+            tarif_montaj: tp.tarif_montaj,
+            tarif_oyna: tp.tarif_oyna || 5000
         };
         if (state.selected_op_ids && state.selected_op_ids.length) {
             pObj.selected_op_ids = state.selected_op_ids.join(',');
         }
         if (state.selected_men_ids && state.selected_men_ids.length) {
             pObj.selected_men_ids = state.selected_men_ids.join(',');
+        }
+        if (state.selected_oyna_ids && state.selected_oyna_ids.length) {
+            pObj.selected_oyna_ids = state.selected_oyna_ids.join(',');
         }
         const params = new URLSearchParams(pObj);
         const resp = await fetch(`/api/period-data/?${params.toString()}`);
@@ -738,6 +1024,8 @@ async function loadPeriodData() {
             state.categories = data.categories || [];
             state.production_summary = data.production_summary || [];
             state.montaj_summary = data.montaj_summary || [];
+            state.oyna_summary = data.oyna_summary || [];
+            state.oyna_data = data.oyna_data || null;
             state.all_employees = data.all_employees || [];
             state.items = data.items;
             state.config = data.config;
@@ -748,6 +1036,8 @@ async function loadPeriodData() {
             applyOperatorPlans();
             ensureSelectedMenIds();
             applyManagerPlans();
+            ensureSelectedOynaIds();
+            applyOynaPlans();
 
             if (state.production_summary && state.manual_production_facts) {
                 state.production_summary.forEach(p => {
@@ -774,13 +1064,27 @@ async function loadPeriodData() {
                 });
             }
 
-            if (state.manual_production_facts || state.manual_montaj_facts) {
+            if (state.oyna_summary && state.manual_oyna_facts) {
+                state.oyna_summary.forEach(o => {
+                    o.auto_fact_m2 = o.auto_fact_m2 !== undefined ? o.auto_fact_m2 : o.fact_m2;
+                    if (state.manual_oyna_facts[String(o.id)] !== undefined) {
+                        o.fact_m2 = state.manual_oyna_facts[String(o.id)];
+                        o.is_manual = true;
+                        o.bonus = Math.round(o.fact_m2 * (o.tarif || state.total_plans.tarif_oyna || 5000));
+                        o.total_salary = (o.oklad || 0) + o.bonus;
+                    }
+                });
+            }
+
+            if (state.manual_production_facts || state.manual_montaj_facts || state.manual_oyna_facts) {
                 state.items.forEach(it => {
                     const p = state.production_summary?.find(x => String(x.id) === String(it.id));
                     const m = state.montaj_summary?.find(x => String(x.id) === String(it.id));
+                    const o = state.oyna_summary?.find(x => String(x.id) === String(it.id));
                     if (p) it.kpi_prod = p.bonus;
                     if (m) it.kpi_montaj = m.bonus;
-                    it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
+                    if (o && o.is_selected) it.kpi_oyna = o.bonus;
+                    it.kpi_bonus = (it.kpi_prod || 0) + (it.kpi_montaj || 0) + (it.kpi_oyna || 0) + (it.kpi_op || 0) + (it.kpi_men || 0);
                     it.total_salary = it.oklad + it.kpi_bonus;
                     it.rest_to_pay = it.total_salary - it.advance;
                 });
@@ -846,6 +1150,7 @@ function renderPlan() {
     const C = state.categories;
     const items = state.items;
     const tp = state.total_plans;
+    const od = state.oyna_data || {};
 
     ensureSelectedOpIds();
     const allCandidates = getAllCandidates();
@@ -1054,7 +1359,11 @@ function renderPlan() {
                         <span>Монтаж tarifi (so'm / m²)</span>
                         <input type="text" inputmode="numeric" id="inputTarifMontaj" class="styled-input" style="width:125px; font-weight:700; text-align:right;" value="${f(tp.tarif_montaj || 50000)}" oninput="handleFormattedNumberInput(this, v => onTarifInput('montaj', v))" onchange="onTarifChange('montaj', parseFormattedNumber(this.value))">
                     </label>
-                    <div class="note" style="margin-top:8px;">Har bir ishlab chiqarish va montaj qilingan kv.m uchun shu summa bo'yicha shaxsiy bonus hisoblanadi. 0 kv bo'lsa faqat oklad to'lanadi.</div>
+                    <label style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                        <span>Ойна tarifi (so'm / m²)</span>
+                        <input type="text" inputmode="numeric" id="inputTarifOyna" class="styled-input" style="width:125px; font-weight:700; text-align:right;" value="${f(tp.tarif_oyna || 5000)}" oninput="handleFormattedNumberInput(this, v => onTarifInput('oyna', v))" onchange="onTarifChange('oyna', parseFormattedNumber(this.value))">
+                    </label>
+                    <div class="note" style="margin-top:8px;">Har bir ishlab chiqarish, montaj va oyna kv.m uchun shu summa bo'yicha shaxsiy bonus hisoblanadi. 0 kv bo'lsa faqat oklad to'lanadi.</div>
                 </div>
             </div>
         </div>
@@ -1131,6 +1440,62 @@ function renderPlan() {
                     </thead>
                     <tbody id="montajTableBody">${renderMontajRows()}</tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Foydalanuvchi talabi: MONTAJ PASTIDA OYNA HISOBI VA BIRIKTIRISH KARTI -->
+        <div class="card" style="border-top:3px solid #059669;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                <div>
+                    <h3 style="font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px;">
+                        <span>🪟 Ойна (Сырьё → ОЙНАЛАР) — Xodimlar kesimida jonli hajm va KPI</span>
+                        <span class="chip" style="background:rgba(16,185,129,0.12); color:#059669; font-weight:600; font-size:11px;">Alohida Layout</span>
+                    </h3>
+                    <p class="note" style="margin-top:2px;">
+                        Отгрузки да Сырьё гуруҳи ичидаги <b>«ОЙНАЛАР»</b> категорияси товарларининг давр ичидаги сотуви бўйича ҳисобланади (${f(od.total_sqm || 0, 2)} m², ${f(od.total_sum || 0)} so'm). Танланган xodimlarga тенг тақсимланади ёки қўлда киритилади.
+                    </p>
+                </div>
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Jami: ${f(od.total_sqm || 0, 2)} m²</span>
+                    <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Sotuv: ${f(od.total_sum || 0)} so'm</span>
+                    <span class="chip" style="background:rgba(16,185,129,0.1); color:#059669; font-weight:600;">Tarif: ${f(tp.tarif_oyna || 5000)} so'm/m²</span>
+                    <span class="chip chip-status chip-ok">MoySklad Jonli Faktlar</span>
+                </div>
+            </div>
+
+            <!-- MoySklad tovarlari tarkibi -->
+            ${renderOynaItemsBreakdown()}
+
+            <div class="sc" style="margin-top:10px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:50px; text-align:center;">Biriktirish</th>
+                            <th>Xodim</th>
+                            <th>Bo'lim</th>
+                            <th style="text-align:right;">Taqsimlangan Oyna hajmi (m²)</th>
+                            <th>Tarif (so'm/m²)</th>
+                            <th>Oyna KPI (so'm)</th>
+                            <th>Oklad (so'm)</th>
+                            <th>Kutilayotgan oylik</th>
+                            <th>Holat</th>
+                        </tr>
+                    </thead>
+                    <tbody id="oynaTableBody">${renderOynaRows()}</tbody>
+                </table>
+            </div>
+
+            <!-- Boshqa ishchilardan biriktirish -->
+            <div style="margin-top:12px; padding:10px; background:var(--bg); border:1px solid var(--bd); border-radius:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span style="font-size:12px; font-weight:600; color:var(--tx-muted);">
+                    Ro'yxatda yo'q boshqa xodimni oynaga biriktirish:
+                </span>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <select id="selectAddOynaWorker" class="styled-input" style="font-size:12px; padding:4px 8px; width:260px;" onchange="addOynaWorker(this.value)">
+                        <option value="">+ Xodim tanlang...</option>
+                        ${renderOynaCandidateOptions()}
+                    </select>
+                </div>
             </div>
         </div>
 
@@ -1372,6 +1737,7 @@ function onTarifInput(cat, val) {
     if (cat === 'pvh') state.total_plans.tarif_pvh = num;
     else if (cat === 'termo') state.total_plans.tarif_termo = num;
     else if (cat === 'montaj') state.total_plans.tarif_montaj = num;
+    else if (cat === 'oyna') state.total_plans.tarif_oyna = num;
 
     if (state.production_summary) {
         state.production_summary.forEach(p => {
@@ -1392,13 +1758,19 @@ function onTarifInput(cat, val) {
         });
     }
 
+    if (state.oyna_summary) {
+        applyOynaPlans();
+    }
+
     state.items.forEach(item => {
         const prod = state.production_summary ? state.production_summary.find(p => p.id === item.id || p.emp_id === item.emp_id) : null;
         const mont = state.montaj_summary ? state.montaj_summary.find(m => m.id === item.id || m.emp_id === item.emp_id) : null;
-        if (prod || mont) {
+        const oyna = state.oyna_summary ? state.oyna_summary.find(o => o.id === item.id || o.emp_id === item.emp_id) : null;
+        if (prod || mont || oyna) {
             item.kpi_prod = prod ? prod.bonus : 0;
             item.kpi_montaj = mont ? mont.bonus : 0;
-            item.kpi_bonus = (item.kpi_prod || 0) + (item.kpi_montaj || 0) + (item.kpi_op || 0) + (item.kpi_men || 0);
+            item.kpi_oyna = (oyna && oyna.is_selected) ? oyna.bonus : 0;
+            item.kpi_bonus = (item.kpi_prod || 0) + (item.kpi_montaj || 0) + (item.kpi_oyna || 0) + (item.kpi_op || 0) + (item.kpi_men || 0);
             item.total_salary = item.oklad + item.kpi_bonus;
             item.rest_to_pay = item.total_salary - item.advance;
         }
@@ -1411,6 +1783,10 @@ function onTarifInput(cat, val) {
     const montTableBody = document.getElementById('montajTableBody');
     if (montTableBody) {
         montTableBody.innerHTML = renderMontajRows();
+    }
+    const oynaTableBody = document.getElementById('oynaTableBody');
+    if (oynaTableBody) {
+        oynaTableBody.innerHTML = renderOynaRows();
     }
 }
 
@@ -1430,13 +1806,17 @@ function onTarifChange(cat, val) {
             total_plan_men: tp.men,
             tarif_pvh: tp.tarif_pvh,
             tarif_termo: tp.tarif_termo,
-            tarif_montaj: tp.tarif_montaj
+            tarif_montaj: tp.tarif_montaj,
+            tarif_oyna: tp.tarif_oyna || 5000
         };
         if (state.selected_op_ids && state.selected_op_ids.length) {
             pObj.selected_op_ids = state.selected_op_ids.join(',');
         }
         if (state.selected_men_ids && state.selected_men_ids.length) {
             pObj.selected_men_ids = state.selected_men_ids.join(',');
+        }
+        if (state.selected_oyna_ids && state.selected_oyna_ids.length) {
+            pObj.selected_oyna_ids = state.selected_oyna_ids.join(',');
         }
         const params = new URLSearchParams(pObj);
         fetch(`/api/period-data/?${params.toString()}`)
@@ -1445,6 +1825,8 @@ function onTarifChange(cat, val) {
                 if (data.success) {
                     if (data.production_summary) state.production_summary = data.production_summary;
                     if (data.montaj_summary) state.montaj_summary = data.montaj_summary;
+                    if (data.oyna_summary) state.oyna_summary = data.oyna_summary;
+                    if (data.oyna_data) state.oyna_data = data.oyna_data;
                     if (data.items) {
                         data.items.forEach(fresh => {
                             const local = state.items.find(i => i.id === fresh.id || i.emp_id === fresh.emp_id);
@@ -1455,6 +1837,7 @@ function onTarifChange(cat, val) {
                                 local.kpi_bonus = fresh.kpi_bonus;
                                 local.kpi_prod = fresh.kpi_prod;
                                 local.kpi_montaj = fresh.kpi_montaj;
+                                local.kpi_oyna = fresh.kpi_oyna;
                                 local.kpi_op = fresh.kpi_op;
                                 local.kpi_men = fresh.kpi_men;
                                 local.total_salary = fresh.total_salary;
@@ -1466,6 +1849,8 @@ function onTarifChange(cat, val) {
                     if (prodTableBody) prodTableBody.innerHTML = renderProductionRows();
                     const montTableBody = document.getElementById('montajTableBody');
                     if (montTableBody) montTableBody.innerHTML = renderMontajRows();
+                    const oynaTableBody = document.getElementById('oynaTableBody');
+                    if (oynaTableBody) oynaTableBody.innerHTML = renderOynaRows();
                 }
             }).catch(e => console.error(e));
     }, 300);
@@ -1515,13 +1900,14 @@ function renderCalc() {
         const parts = [];
         if (e.kpi_prod > 0) parts.push(`Ishlab ch: ${f(e.kpi_prod)}`);
         if (e.kpi_montaj > 0) parts.push(`Montaj: ${f(e.kpi_montaj)}`);
+        if (e.kpi_oyna > 0) parts.push(`Oyna: ${f(e.kpi_oyna)}`);
         if (e.kpi_op > 0) parts.push(`Operator: ${f(e.kpi_op)}`);
         if (e.kpi_men > 0) parts.push(`Sotuvchi: ${f(e.kpi_men)}`);
 
         let breakdownHtml = '';
         if (parts.length > 1) {
             breakdownHtml = `<div style="font-size:10px; color:var(--tx-muted); margin-top:3px; font-weight:600; white-space:nowrap;">${parts.join(' · ')}</div>`;
-        } else if (parts.length === 1 && (e.kpi_prod > 0 || e.kpi_montaj > 0)) {
+        } else if (parts.length === 1 && (e.kpi_prod > 0 || e.kpi_montaj > 0 || e.kpi_oyna > 0)) {
             breakdownHtml = `<div style="font-size:10px; color:var(--tx-muted); margin-top:3px;">${parts[0]}</div>`;
         }
 
@@ -1623,9 +2009,9 @@ function getAutoKpi(e) {
     let pct = e.percent || 0;
     let bonus = 0;
 
-    // 1) Multi-role bonus hisobi (Ishlab chiqarish + Montaj + Operator + Sotuvchi)
-    if (e.kpi_prod !== undefined || e.kpi_montaj !== undefined) {
-        bonus = (e.kpi_prod || 0) + (e.kpi_montaj || 0) + (e.kpi_op || 0) + (e.kpi_men || 0);
+    // 1) Multi-role bonus hisobi (Ishlab chiqarish + Montaj + Oyna + Operator + Sotuvchi)
+    if (e.kpi_prod !== undefined || e.kpi_montaj !== undefined || e.kpi_oyna !== undefined) {
+        bonus = (e.kpi_prod || 0) + (e.kpi_montaj || 0) + (e.kpi_oyna || 0) + (e.kpi_op || 0) + (e.kpi_men || 0);
         if (bonus > 0 || (e.kpi_bonus !== undefined && e.kpi_bonus > 0)) {
             return { percent: pct, bonus: Math.round(bonus || e.kpi_bonus) };
         }

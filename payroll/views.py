@@ -87,12 +87,18 @@ def get_period_data(request):
     if request.GET.get('tarif_montaj'):
         try: total_plans['tarif_montaj'] = float(request.GET.get('tarif_montaj'))
         except ValueError: pass
+    if request.GET.get('tarif_oyna'):
+        try: total_plans['tarif_oyna'] = float(request.GET.get('tarif_oyna'))
+        except ValueError: pass
     if request.GET.get('selected_op_ids'):
         raw = request.GET.get('selected_op_ids')
         total_plans['selected_op_ids'] = [x.strip() for x in raw.split(',') if x.strip()]
     if request.GET.get('selected_men_ids'):
         raw_men = request.GET.get('selected_men_ids')
         total_plans['selected_men_ids'] = [x.strip() for x in raw_men.split(',') if x.strip()]
+    if request.GET.get('selected_oyna_ids'):
+        raw_oyna = request.GET.get('selected_oyna_ids')
+        total_plans['selected_oyna_ids'] = [x.strip() for x in raw_oyna.split(',') if x.strip()]
 
     config = MoySkladConfig.get_solo()
     if config.token:

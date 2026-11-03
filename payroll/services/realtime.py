@@ -465,7 +465,66 @@ class RealtimeMoySkladEngine:
             except Exception as e:
                 logger.exception(f"Error fetching realtime advances: {e}")
 
-        # 5. ISHLAB CHIQARISH KATEGORIYALARI
+        # 5. OYNALAR SOTUVI (Отгрузкалар бўйича «Сырьё → ОЙНАЛАР» тоифасидаги товарлар)
+        # MoySklad API: «Продажи → Прибыльность» (/report/profit/byproduct) ва «Отгрузки» (/entity/demand)
+        folder_oyna_id = 'b6794395-c175-11f1-0a80-175c0011760e'
+        oyna_items = []
+        total_oyna_sqm = 0.0
+        total_oyna_sum = 0.0
+
+        if self.token:
+            try:
+                pnl_url = f"{self.base_url}/report/profit/byproduct"
+                params = {
+                    'momentFrom': d_from_str,
+                    'momentTo': d_to_str,
+                    'filter': f"productFolder={self.base_url}/entity/productfolder/{folder_oyna_id}"
+                }
+                resp_pnl = requests.get(pnl_url, headers=self.headers, params=params, timeout=self.timeout)
+                if resp_pnl.status_code == 200:
+                    for row in resp_pnl.json().get('rows', []):
+                        prod_name = row.get('assortment', {}).get('name') or "Oyna"
+                        q = float(row.get('sellQuantity', 0) or 0)
+                        s = float(row.get('sellSum', 0) or 0) / 100.0
+                        if q > 0 or s > 0:
+                            oyna_items.append({
+                                'name': prod_name,
+                                'quantity': round(q, 2),
+                                'sum': round(s, 2)
+                            })
+                            total_oyna_sqm += q
+                            total_oyna_sum += s
+
+                if total_oyna_sqm == 0:
+                    d_url = f"{self.base_url}/entity/demand?filter=moment>={d_from_str};moment<={d_to_str}&expand=positions.assortment.productFolder&limit=100"
+                    r_dem = requests.get(d_url, headers=self.headers, timeout=self.timeout)
+                    if r_dem.status_code == 200:
+                        for dem in r_dem.json().get('rows', []):
+                            for pos in dem.get('positions', {}).get('rows', []):
+                                assortment = pos.get('assortment', {}) or {}
+                                p_folder = assortment.get('productFolder', {}) or {}
+                                p_folder_href = p_folder.get('meta', {}).get('href', '')
+                                path_name = p_folder.get('pathName', '')
+                                folder_name = p_folder.get('name', '')
+                                if (folder_oyna_id in p_folder_href) or ('ОЙНАЛАР' in path_name) or ('ОЙНАЛАР' in folder_name):
+                                    q = float(pos.get('quantity', 0) or 0)
+                                    p = float(pos.get('price', 0) or 0) / 100.0
+                                    s = q * p
+                                    prod_name = assortment.get('name', 'Oyna')
+                                    oyna_items.append({
+                                        'name': prod_name,
+                                        'quantity': round(q, 2),
+                                        'sum': round(s, 2)
+                                    })
+                                    total_oyna_sqm += q
+                                    total_oyna_sum += s
+            except Exception as e:
+                logger.warning(f"Error fetching oyna sales: {e}")
+
+        total_oyna_sqm = round(total_oyna_sqm, 2)
+        total_oyna_sum = round(total_oyna_sum, 2)
+
+        # 6. ISHLAB CHIQARISH KATEGORIYALARI
         cats_result = []
         for c in categories:
             c_name_u = c.name.upper()
@@ -521,6 +580,7 @@ class RealtimeMoySkladEngine:
         tarif_pvh = float(total_plans.get('tarif_pvh') or 60000.0)    # so'm/m2
         tarif_termo = float(total_plans.get('tarif_termo') or 80000.0) # so'm/m2
         tarif_montaj = float(total_plans.get('tarif_montaj') or 50000.0) # so'm/m2
+        tarif_oyna = float(total_plans.get('tarif_oyna') or 5000.0)     # so'm/m2
 
         selected_op_ids = total_plans.get('selected_op_ids')
         if selected_op_ids is not None:
@@ -544,18 +604,32 @@ class RealtimeMoySkladEngine:
                 if e['is_active'] and any(k in f"{e['name']} {e['position']}".lower() for k in ["сотувчи", "sotuvchi", "менеджер", "рахбар"])
             ]
 
+        selected_oyna_ids = total_plans.get('selected_oyna_ids')
+        if selected_oyna_ids is not None:
+            selected_oyna_ids = [str(x).strip() for x in selected_oyna_ids if str(x).strip() and len(str(x).strip()) > 5]
+        else:
+            # Default: xodimlar ichidan oyna/oynakchi lavozimidagilar
+            selected_oyna_ids = [
+                str(e['id']) for e in employees 
+                if e['is_active'] and any(k in f"{e['name']} {e['position']}".lower() for k in ["ойнакчи", "ойна", "oynakchi"])
+            ]
+
         op_target_count = len(selected_op_ids)
         men_target_count = len(selected_men_ids)
+        oyna_worker_count = len(selected_oyna_ids)
 
         ind_plan_op = round(tot_plan_op / op_target_count) if op_target_count > 0 else 0
         ind_plan_men = round(tot_plan_men / men_target_count) if men_target_count > 0 else 0
 
-        # 7. ISHLAB CHIQARISH VA MONTAJNI ALOHIDA LAYOUTLARGA AJRATISH
-        # Foydalanuvchi talabi:
-        # faqat ishlab chiqarganlar alohida layout da va montaj alohida hisoblanib berilgan tariflar boyicha hisoblanib kpi hisoblanadi
-        # yani bitta hodim ham ishlab chiqaruvchi ham montaj qilish hisobi olinadi
+        # Oyna bonusi fondi va har bir biriktirilgan xodimga taqsimlanishi
+        total_oyna_bonus_fund = round(total_oyna_sqm * tarif_oyna)
+        ind_oyna_sqm = round(total_oyna_sqm / oyna_worker_count, 2) if oyna_worker_count > 0 else 0.0
+        ind_oyna_bonus = round(total_oyna_bonus_fund / oyna_worker_count) if oyna_worker_count > 0 else 0
+
+        # 7. ISHLAB CHIQARISH, MONTAJ VA OYNA ALOHIDA LAYOUTLARI
         production_summary = []
         montaj_summary = []
+        oyna_summary = []
 
         for emp in employees:
             eid = emp['id']
@@ -636,6 +710,33 @@ class RealtimeMoySkladEngine:
                     'status_label': 'Montaj bonusi bilan' if m_m2 > 0 else 'Faqat oklad (0 m²)'
                 })
 
+            # C) ALOHIDA OYNA LAYOUTI (Oynakchilar yoki biriktirilgan xodimlar)
+            is_oyna_cand = (
+                str(eid) in selected_oyna_ids or 
+                str(emp.get('ms_id', '')) in selected_oyna_ids or 
+                any(k in comb_lower for k in ["ойнакчи", "ойна", "oynakchi"])
+            )
+            if is_oyna_cand:
+                is_sel = (str(eid) in selected_oyna_ids or str(emp.get('ms_id', '')) in selected_oyna_ids)
+                emp_sqm = ind_oyna_sqm if is_sel else 0.0
+                emp_bonus = ind_oyna_bonus if is_sel else 0
+                oyna_summary.append({
+                    'emp_id': eid,
+                    'id': eid,
+                    'ms_id': emp.get('ms_id', ''),
+                    'name': emp['name'],
+                    'position': emp['position'],
+                    'dept': "Ойнакчи",
+                    'is_selected': is_sel,
+                    'fact_m2': emp_sqm,
+                    'auto_fact_m2': ind_oyna_sqm,
+                    'tarif': tarif_oyna,
+                    'bonus': emp_bonus,
+                    'oklad': emp_oklad,
+                    'total_salary': emp_oklad + emp_bonus,
+                    'status_label': f"Biriktirilgan ({emp_sqm} m²)" if is_sel else "Biriktirilmagan (0 m²)"
+                })
+
         # 8. HAR BIR XODIMNING REAL-TIME OYLIK VA KPI HISOBI (HAMMA BONUslar BIRLASHADI)
         items_result = []
         s_ok = 0.0
@@ -661,7 +762,15 @@ class RealtimeMoySkladEngine:
             # 2) Montaj bonusi
             montaj_bonus = round(m_m2 * tarif_montaj)
 
-            # 3) Sotuv operatori bonusi
+            # 3) Oyna bonusi
+            is_oyna_selected = (
+                str(emp_id) in selected_oyna_ids or 
+                str(ms_id) in selected_oyna_ids
+            )
+            oyna_sqm = ind_oyna_sqm if is_oyna_selected else 0.0
+            oyna_bonus = ind_oyna_bonus if is_oyna_selected else 0
+
+            # 4) Sotuv operatori bonusi
             # Agar xodim operatorlar ro'yxatida tanlangan bo'lsa
             is_op_selected = (
                 str(emp_id) in selected_op_ids or 
@@ -684,7 +793,7 @@ class RealtimeMoySkladEngine:
                 else:
                     op_bonus = 0.0
 
-            # 4) Sotuvchi / Menejer bonusi
+            # 5) Sotuvchi / Menejer bonusi
             # Agar xodim sotuvchilar ro'yxatida tanlangan bo'lsa
             is_men_selected = (
                 str(emp_id) in selected_men_ids or 
@@ -705,8 +814,8 @@ class RealtimeMoySkladEngine:
                 else:
                     men_bonus = 0.0
 
-            # 5) JAMI KPI BONUSI (Ishlab chiqarish + Montaj + Operator + Sotuvchi)
-            total_kpi = round(prod_bonus + montaj_bonus + op_bonus + men_bonus)
+            # 6) JAMI KPI BONUSI (Ishlab chiqarish + Montaj + Oyna + Operator + Sotuvchi)
+            total_kpi = round(prod_bonus + montaj_bonus + oyna_bonus + op_bonus + men_bonus)
             total_salary = round(oklad + total_kpi)
             rest_to_pay = round(total_salary - advance)
 
@@ -721,9 +830,14 @@ class RealtimeMoySkladEngine:
                 main_fact = op_fact
                 main_pct = op_pct
                 main_group = 'op'
-            elif prod_m2 > 0 or m_m2 > 0 or emp['dept'] in ["PVX bo'limi", "TERMO bo'limi", "Монтаж"]:
+            elif is_oyna_selected or oyna_sqm > 0:
                 main_plan = 0.0
-                main_fact = round(prod_m2 + m_m2, 2)
+                main_fact = round(prod_m2 + m_m2 + oyna_sqm, 2)
+                main_pct = 100.0 if main_fact > 0 else 0.0
+                main_group = 'ish'
+            elif prod_m2 > 0 or m_m2 > 0 or emp['dept'] in ["PVX bo'limi", "TERMO bo'limi", "Монтаж", "Ойнакчи"]:
+                main_plan = 0.0
+                main_fact = round(prod_m2 + m_m2 + oyna_sqm, 2)
                 main_pct = 100.0 if main_fact > 0 else 0.0
                 main_group = 'ish'
             else:
@@ -762,18 +876,21 @@ class RealtimeMoySkladEngine:
                 # Detallashtirilgan KPI ko'rsatkichlari (tooltip va alohida hisob uchun)
                 'kpi_prod': prod_bonus,
                 'kpi_montaj': montaj_bonus,
+                'kpi_oyna': oyna_bonus,
                 'kpi_op': round(op_bonus),
                 'kpi_men': round(men_bonus),
                 'pvh_m2': p_m2,
                 'termo_m2': t_m2,
                 'prod_m2': prod_m2,
                 'montaj_m2': m_m2,
+                'oyna_m2': oyna_sqm,
                 'op_fact': op_fact,
                 'op_plan': op_plan,
                 'men_fact': men_fact,
                 'men_plan': men_plan,
                 'is_op_selected': is_op_selected,
                 'is_men_selected': is_men_selected,
+                'is_oyna_selected': is_oyna_selected,
             })
 
         return {
@@ -814,6 +931,7 @@ class RealtimeMoySkladEngine:
                 'tarif_pvh': tarif_pvh,
                 'tarif_termo': tarif_termo,
                 'tarif_montaj': tarif_montaj,
+                'tarif_oyna': tarif_oyna,
                 'op_count': op_count,
                 'op_target_count': op_target_count,
                 'selected_op_ids': selected_op_ids or [],
@@ -823,10 +941,23 @@ class RealtimeMoySkladEngine:
                 'pvh_count': pvh_count,
                 'termo_count': termo_count,
                 'montaj_count': montaj_count,
+                'selected_oyna_ids': selected_oyna_ids or [],
+                'oyna_worker_count': oyna_worker_count,
             },
             'categories': cats_result,
             'production_summary': production_summary,
             'montaj_summary': montaj_summary,
+            'oyna_summary': oyna_summary,
+            'oyna_data': {
+                'total_sqm': total_oyna_sqm,
+                'total_sum': total_oyna_sum,
+                'tarif_oyna': tarif_oyna,
+                'total_bonus': total_oyna_bonus_fund,
+                'worker_count': oyna_worker_count,
+                'ind_sqm': ind_oyna_sqm,
+                'ind_bonus': ind_oyna_bonus,
+                'items': oyna_items,
+            },
             'items': items_result,
             'all_employees': [
                 {
